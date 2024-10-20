@@ -6,39 +6,6 @@ from model import Generator, Discriminator
 import config  # Import the config file
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-# Data Augmentation
-data_gen = ImageDataGenerator(rotation_range=20,
-                              width_shift_range=0.1,
-                              height_shift_range=0.1,
-                              shear_range=0.1,
-                              zoom_range=0.1,
-                              horizontal_flip=True,
-                              fill_mode='nearest')
-
-# Load data
-rgb_images = load_rgb_images(config.RGB_IMAGE_PATH)
-hsi_images = load_hsi_images_from_all_folders(config.HSI_IMAGE_PATH)
-
-# Model setup
-generator = Generator()
-discriminator = Discriminator()
-
-generator_optimizer = tf.keras.optimizers.Adam(
-    config.LEARNING_RATE, beta_1=config.BETA_1)
-discriminator_optimizer = tf.keras.optimizers.Adam(
-    config.LEARNING_RATE, beta_1=config.BETA_1)
-
-# Logging and Checkpointing
-log_dir = config.LOG_DIR
-summary_writer = tf.summary.create_file_writer(log_dir)
-# To save model checkpoints
-checkpoint_path = os.path.join(
-    config.CHECKPOINT_DIR, config.CHECKPOINT_PREFIX)
-checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
-                                 discriminator_optimizer=discriminator_optimizer,
-                                 generator=generator,
-                                 discriminator=discriminator)
-
 
 def train_gan(rgb_images, hsi_images):
     rgb_images = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
@@ -111,4 +78,38 @@ def train_gan(rgb_images, hsi_images):
 
 
 # Train the GAN
-train_gan(rgb_images, hsi_images)
+if __name__ == "__main__": 
+    # Data Augmentation
+    data_gen = ImageDataGenerator(rotation_range=20,
+                                width_shift_range=0.1,
+                                height_shift_range=0.1,
+                                shear_range=0.1,
+                                zoom_range=0.1,
+                                horizontal_flip=True,
+                                fill_mode='nearest')
+
+    # Load data
+    rgb_images = load_rgb_images(config.RGB_IMAGE_PATH)
+    hsi_images = load_hsi_images_from_all_folders(config.HSI_IMAGE_PATH)
+
+    # Model setup
+    generator = Generator()
+    discriminator = Discriminator()
+
+    generator_optimizer = tf.keras.optimizers.Adam(
+        config.LEARNING_RATE, beta_1=config.BETA_1)
+    discriminator_optimizer = tf.keras.optimizers.Adam(
+        config.LEARNING_RATE, beta_1=config.BETA_1)
+
+    # Logging and Checkpointing
+    log_dir = config.LOG_DIR
+    summary_writer = tf.summary.create_file_writer(log_dir)
+    # To save model checkpoints
+    checkpoint_path = os.path.join(
+        config.CHECKPOINT_DIR, config.CHECKPOINT_PREFIX)
+    checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
+                                    discriminator_optimizer=discriminator_optimizer,
+                                    generator=generator,
+                                    discriminator=discriminator)
+
+    train_gan(rgb_images, hsi_images)
