@@ -1,0 +1,165 @@
+{
+  "build": "py310haa95532_0",
+  "build_number": 0,
+  "channel": "https://repo.anaconda.com/pkgs/main/win-64",
+  "constrains": [],
+  "depends": [
+    "python >=3.10,<3.11.0a0"
+  ],
+  "extracted_package_dir": "D:\\Users\\Keshi\\anaconda3\\pkgs\\aiohappyeyeballs-2.4.0-py310haa95532_0",
+  "files": [
+    "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/INSTALLER",
+    "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/LICENSE",
+    "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/METADATA",
+    "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/RECORD",
+    "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/REQUESTED",
+    "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/WHEEL",
+    "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/direct_url.json",
+    "Lib/site-packages/aiohappyeyeballs/__init__.py",
+    "Lib/site-packages/aiohappyeyeballs/__pycache__/__init__.cpython-310.pyc",
+    "Lib/site-packages/aiohappyeyeballs/__pycache__/impl.cpython-310.pyc",
+    "Lib/site-packages/aiohappyeyeballs/__pycache__/types.cpython-310.pyc",
+    "Lib/site-packages/aiohappyeyeballs/__pycache__/utils.cpython-310.pyc",
+    "Lib/site-packages/aiohappyeyeballs/impl.py",
+    "Lib/site-packages/aiohappyeyeballs/py.typed",
+    "Lib/site-packages/aiohappyeyeballs/types.py",
+    "Lib/site-packages/aiohappyeyeballs/utils.py",
+    ".nonadmin"
+  ],
+  "fn": "aiohappyeyeballs-2.4.0-py310haa95532_0.conda",
+  "legacy_bz2_md5": "7d85b418a784f622c24226b975e1dcb5",
+  "legacy_bz2_size": 22030,
+  "license": "PSF-2.0",
+  "license_family": "Other",
+  "link": {
+    "source": "D:\\Users\\Keshi\\anaconda3\\pkgs\\aiohappyeyeballs-2.4.0-py310haa95532_0",
+    "type": 1
+  },
+  "md5": "693449bedcabc361d1eb9b5a6e24fea4",
+  "name": "aiohappyeyeballs",
+  "package_tarball_full_path": "D:\\Users\\Keshi\\anaconda3\\pkgs\\aiohappyeyeballs-2.4.0-py310haa95532_0.conda",
+  "paths_data": {
+    "paths": [
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/INSTALLER",
+        "path_type": "hardlink",
+        "sha256": "d0edee15f91b406f3f99726e44eb990be6e34fd0345b52b910c568e0eef6a2a8",
+        "sha256_in_prefix": "d0edee15f91b406f3f99726e44eb990be6e34fd0345b52b910c568e0eef6a2a8",
+        "size_in_bytes": 5
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/LICENSE",
+        "path_type": "hardlink",
+        "sha256": "3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf",
+        "sha256_in_prefix": "3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf",
+        "size_in_bytes": 13936
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/METADATA",
+        "path_type": "hardlink",
+        "sha256": "bfbff34ca97816ab469ba1e07468361cde6f6c6e1848b43fdf043e4c79a271ad",
+        "sha256_in_prefix": "bfbff34ca97816ab469ba1e07468361cde6f6c6e1848b43fdf043e4c79a271ad",
+        "size_in_bytes": 6103
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/RECORD",
+        "path_type": "hardlink",
+        "sha256": "013e152c1c031c7bd013b4583b0b53e6071e76d4aa609d43f67451c8e4ee3541",
+        "sha256_in_prefix": "013e152c1c031c7bd013b4583b0b53e6071e76d4aa609d43f67451c8e4ee3541",
+        "size_in_bytes": 1263
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/REQUESTED",
+        "path_type": "hardlink",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256_in_prefix": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_in_bytes": 0
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/WHEEL",
+        "path_type": "hardlink",
+        "sha256": "ed9f3fdbbb9a1c8fd4640738528c783e906143d639fe6a1d65758cc6d522e0d5",
+        "sha256_in_prefix": "ed9f3fdbbb9a1c8fd4640738528c783e906143d639fe6a1d65758cc6d522e0d5",
+        "size_in_bytes": 88
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs-2.4.0.dist-info/direct_url.json",
+        "path_type": "hardlink",
+        "sha256": "ed8442fd88e8393a71978a1c6e8897488d58481df1552815195e2cbfebe0ec17",
+        "sha256_in_prefix": "ed8442fd88e8393a71978a1c6e8897488d58481df1552815195e2cbfebe0ec17",
+        "size_in_bytes": 96
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs/__init__.py",
+        "path_type": "hardlink",
+        "sha256": "385f86278306b25dd0a8eff679f7ba50bd75140c519b34c3c838b013a86019cd",
+        "sha256_in_prefix": "385f86278306b25dd0a8eff679f7ba50bd75140c519b34c3c838b013a86019cd",
+        "size_in_bytes": 317
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs/__pycache__/__init__.cpython-310.pyc",
+        "path_type": "hardlink",
+        "sha256": "7e24638cc270bc0b2b12a95fd1d7926abff17d0595da38ba8fbc14caf6764473",
+        "sha256_in_prefix": "7e24638cc270bc0b2b12a95fd1d7926abff17d0595da38ba8fbc14caf6764473",
+        "size_in_bytes": 406
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs/__pycache__/impl.cpython-310.pyc",
+        "path_type": "hardlink",
+        "sha256": "6892fbaa28333926b98023293c081d275feb6e928bdef410d81d0d06472e04e1",
+        "sha256_in_prefix": "6892fbaa28333926b98023293c081d275feb6e928bdef410d81d0d06472e04e1",
+        "size_in_bytes": 5164
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs/__pycache__/types.cpython-310.pyc",
+        "path_type": "hardlink",
+        "sha256": "1e1cadef9395744c12eb04fee19f7909998183fd7259cd287cd650cbea8e6212",
+        "sha256_in_prefix": "1e1cadef9395744c12eb04fee19f7909998183fd7259cd287cd650cbea8e6212",
+        "size_in_bytes": 355
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs/__pycache__/utils.cpython-310.pyc",
+        "path_type": "hardlink",
+        "sha256": "6db21b6898259082d260770b11c92cd8d613221f4f88aeb0e92626032aede490",
+        "sha256_in_prefix": "6db21b6898259082d260770b11c92cd8d613221f4f88aeb0e92626032aede490",
+        "size_in_bytes": 2498
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs/impl.py",
+        "path_type": "hardlink",
+        "sha256": "75c62ad39837946924a31c5dd4a167c978f814a51a2df7a996727dddd2e7a104",
+        "sha256_in_prefix": "75c62ad39837946924a31c5dd4a167c978f814a51a2df7a996727dddd2e7a104",
+        "size_in_bytes": 7289
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs/py.typed",
+        "path_type": "hardlink",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256_in_prefix": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_in_bytes": 0
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs/types.py",
+        "path_type": "hardlink",
+        "sha256": "8983e205397927b6048e722a10e5544d13f3cf60f0a921c1461bdb025334cefd",
+        "sha256_in_prefix": "8983e205397927b6048e722a10e5544d13f3cf60f0a921c1461bdb025334cefd",
+        "size_in_bytes": 234
+      },
+      {
+        "_path": "Lib/site-packages/aiohappyeyeballs/utils.py",
+        "path_type": "hardlink",
+        "sha256": "5bf39a7f588ff306111e8e81f79798c7e6716e3a71c96c18813764856a861797",
+        "sha256_in_prefix": "5bf39a7f588ff306111e8e81f79798c7e6716e3a71c96c18813764856a861797",
+        "size_in_bytes": 3026
+      }
+    ],
+    "paths_version": 1
+  },
+  "requested_spec": "None",
+  "sha256": "bc12b80f7391f5bf63fec3340e4242ae0f364338b56f8b1689b3e462f6d097fd",
+  "size": 20911,
+  "subdir": "win-64",
+  "timestamp": 1725434179814,
+  "url": "https://repo.anaconda.com/pkgs/main/win-64/aiohappyeyeballs-2.4.0-py310haa95532_0.conda",
+  "version": "2.4.0"
+}

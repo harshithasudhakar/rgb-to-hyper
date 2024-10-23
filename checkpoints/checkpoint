@@ -1,0 +1,2 @@
+model_checkpoint_path: "keshihan_ckpt-5"
+all_model_checkpoint_paths: "keshihan_ckpt-5"
