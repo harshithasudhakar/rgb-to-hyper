@@ -1,9 +1,10 @@
 # main.py
 import os
+import config
 import tensorflow as tf
-from utils import load_rgb_images, load_hsi_images_from_all_folders, discriminator_loss, generator_loss, mean_squared_error, peak_signal_to_noise_ratio, spectral_angle_mapper
+from extract import extract_bands
+from utils import pair_img, load_rgb_images, load_hsi_images_from_all_folders, discriminator_loss, generator_loss, mean_squared_error, peak_signal_to_noise_ratio, spectral_angle_mapper
 from model import Generator, Discriminator
-import config  # Import the config file
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 
@@ -78,15 +79,15 @@ def train_gan(rgb_images, hsi_images):
 
 
 # Train the GAN
-if __name__ == "__main__": 
+if __name__ == "__main__":
     # Data Augmentation
     data_gen = ImageDataGenerator(rotation_range=20,
-                                width_shift_range=0.1,
-                                height_shift_range=0.1,
-                                shear_range=0.1,
-                                zoom_range=0.1,
-                                horizontal_flip=True,
-                                fill_mode='nearest')
+                                  width_shift_range=0.1,
+                                  height_shift_range=0.1,
+                                  shear_range=0.1,
+                                  zoom_range=0.1,
+                                  horizontal_flip=True,
+                                  fill_mode='nearest')
 
     # Load data
     rgb_images = load_rgb_images(config.RGB_IMAGE_PATH)
@@ -108,8 +109,8 @@ if __name__ == "__main__":
     checkpoint_path = os.path.join(
         config.CHECKPOINT_DIR, config.CHECKPOINT_PREFIX)
     checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
-                                    discriminator_optimizer=discriminator_optimizer,
-                                    generator=generator,
-                                    discriminator=discriminator)
+                                     discriminator_optimizer=discriminator_optimizer,
+                                     generator=generator,
+                                     discriminator=discriminator)
 
     train_gan(rgb_images, hsi_images)
