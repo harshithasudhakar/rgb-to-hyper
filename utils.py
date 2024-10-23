@@ -3,6 +3,7 @@ import numpy as np
 import tifffile as tiff
 import tensorflow as tf
 from PIL import Image
+from model import Generator, Discriminator
 from config import HSI_CHANNELS, IMG_WIDTH, IMG_HEIGHT
 
 
@@ -179,3 +180,30 @@ def spectral_angle_mapper(y_true, y_pred, epsilon=1e-8):
     cos_theta = dot_product / (tf.maximum(norm_true * norm_pred, epsilon))
     cos_theta = tf.clip_by_value(cos_theta, -1.0, 1.0)
     return tf.reduce_mean(tf.acos(cos_theta))
+
+
+def aggregate_weights():
+    ckpt_list: list = ['./checkpoints/abdul_ckpt-2', './checkpoints/akshath_ckpt-2',
+                       './checkpoints/harshitha_ckpt-5', './checkpoints/keshihan_ckpt-2',
+                       './checkpoints/nihaal_ckpt-2', './checkpoints/hrithik_ckpt-2']
+
+    gen = Generator()
+    disc = Discriminator()
+
+    num_ckpt = len(ckpt_list)
+    checkpoint = tf.train.Checkpoint(generator=gen, discriminator=disc)
+
+    gen_weights = np.zeros_like(gen.get_weights())
+    disc_weights = np.zeros_like(disc.get_weights())
+
+    for path in ckpt_list:
+        checkpoint.restore(path).expect_partial()
+        gen_weights = np.add(gen_weights, gen.get_weights())
+        disc_weights = np.add(disc_weights, disc.get_weights())
+
+    gen_weights = np.divide(gen_weights, num_ckpt)
+    disc_weights = np.divide(disc_weights, num_ckpt)
+
+    gen.set_weights(gen_weights)
+    disc.set_weights(disc_weights)
+    checkpoint.save('checkpoints/global_1ckpt')

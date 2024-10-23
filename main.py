@@ -1,6 +1,7 @@
 # main.py
 import os
 import config
+import numpy as np
 import tensorflow as tf
 from extract import extract_bands
 from utils import pair_img, load_rgb_images, load_hsi_images_from_all_folders, discriminator_loss, generator_loss, mean_squared_error, peak_signal_to_noise_ratio, spectral_angle_mapper
@@ -8,7 +9,14 @@ from model import Generator, Discriminator
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 
-def train_gan(rgb_images, hsi_images):
+def train_gan(rgb_images, hsi_images, generator: Generator, discriminator: Discriminator, mode="local"):
+    if mode == "global":
+        checkpoint = tf.train.Checkpoint(
+            generator=generator, discriminator=discriminator)
+        checkpoint.restore(tf.train.latest_checkpoint('./checkpoints/'))
+    else:
+        pass
+
     rgb_images = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
     hsi_images = tf.convert_to_tensor(hsi_images, dtype=tf.float32)
 
@@ -61,6 +69,7 @@ def train_gan(rgb_images, hsi_images):
             psnr = peak_signal_to_noise_ratio(hsi_batch, generated_hsi_resized)
             sam = spectral_angle_mapper(hsi_batch, generated_hsi_resized)
 
+            """
             with summary_writer.as_default():
                 tf.summary.scalar('Discriminator Loss', disc_loss, step=epoch *
                                   len(rgb_images) // config.BATCH_SIZE + i // config.BATCH_SIZE)
@@ -72,15 +81,16 @@ def train_gan(rgb_images, hsi_images):
                                   config.BATCH_SIZE + i // config.BATCH_SIZE)
                 tf.summary.scalar('SAM', sam, step=epoch * len(rgb_images) //
                                   config.BATCH_SIZE + i // config.BATCH_SIZE)
-
+            """
             print(f'Epoch: {epoch}, Batch: {i // config.BATCH_SIZE}, Disc Loss: {disc_loss.numpy()}, Gen Loss: {gen_loss.numpy()}, MSE: {mse.numpy()}, PSNR: {psnr.numpy()}, SAM: {sam.numpy()}')
-
         checkpoint.save(file_prefix=checkpoint_path)
 
 
 # Train the GAN
 if __name__ == "__main__":
     # Data Augmentation
+    # train_global()
+    mode = "global"
     data_gen = ImageDataGenerator(rotation_range=20,
                                   width_shift_range=0.1,
                                   height_shift_range=0.1,
@@ -106,11 +116,18 @@ if __name__ == "__main__":
     log_dir = config.LOG_DIR
     summary_writer = tf.summary.create_file_writer(log_dir)
     # To save model checkpoints
-    checkpoint_path = os.path.join(
-        config.CHECKPOINT_DIR, config.CHECKPOINT_PREFIX)
+    if mode == "global":
+        checkpoint_path = os.path.join(
+            config.CHECKPOINT_DIR, config.GLOBAL_CHECKPOINT_PREFIX)
+    elif mode == "local":
+        checkpoint_path = os.path.join(
+            config.CHECKPOINT_DIR, config.LOCAL_CHECKPOINT_PREFIX)
+    else:
+        print("Error.")
     checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
                                      discriminator_optimizer=discriminator_optimizer,
                                      generator=generator,
                                      discriminator=discriminator)
 
-    train_gan(rgb_images, hsi_images)
+    train_gan(rgb_images, hsi_images,  generator=generator,
+              discriminator=discriminator, mode=mode)
