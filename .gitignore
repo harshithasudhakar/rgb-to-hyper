@@ -163,5 +163,5 @@ cython_debug/
 .ecs/
 data/
 logs/
-notebooks/
+# notebooks/
 checkpoints/deprecated/
