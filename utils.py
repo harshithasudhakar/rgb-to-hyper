@@ -115,16 +115,17 @@ def load_hsi_images_from_all_folders(base_folder, target_size=(IMG_WIDTH, IMG_HE
             for file in sorted(os.listdir(folder_path)):
                 if file.endswith('.tiff') or file.endswith('.tif'):
                     image_path = os.path.join(folder_path, file)
-                    img = Image.open(image_path).convert(
-                        'L')
+                    img = Image.open(image_path)
                     img = img.resize(target_size)
-                    img = np.array(img)[..., np.newaxis]
+                    img = np.array(img)
                     images.append(img)
+
             if len(images) == 31:
                 stacked_images = np.array(images)
-                if stacked_images.shape == (31, IMG_HEIGHT, IMG_WIDTH, 1):
-                    all_hsi_images.append(stacked_images.reshape(
-                        IMG_HEIGHT, IMG_WIDTH, HSI_CHANNELS))
+                if stacked_images.shape == (31, IMG_HEIGHT, IMG_WIDTH):
+                    all_hsi_images.append(stacked_images.transpose(
+                        1, 2, 0))  # Reshape to HxWxC
+
     return np.array(all_hsi_images)
 
 
@@ -173,12 +174,27 @@ def peak_signal_to_noise_ratio(y_true, y_pred):
     return tf.reduce_mean(tf.image.psnr(y_true, y_pred, max_val=1.0))
 
 
+"""
 def spectral_angle_mapper(y_true, y_pred, epsilon=1e-8):
     dot_product = tf.reduce_sum(y_true * y_pred, axis=-1)
     norm_true = tf.norm(y_true, axis=-1)
     norm_pred = tf.norm(y_pred, axis=-1)
     cos_theta = dot_product / (tf.maximum(norm_true * norm_pred, epsilon))
     cos_theta = tf.clip_by_value(cos_theta, -1.0, 1.0)
+    return tf.reduce_mean(tf.acos(cos_theta))
+"""
+
+
+def spectral_angle_mapper(y_true, y_pred, epsilon=1e-7):
+    y_true = y_true + epsilon
+    y_pred = y_pred + epsilon
+
+    y_true_normalized = tf.nn.l2_normalize(y_true, axis=-1)
+    y_pred_normalized = tf.nn.l2_normalize(y_pred, axis=-1)
+
+    cos_theta = tf.reduce_sum(y_true_normalized * y_pred_normalized, axis=-1)
+    cos_theta = tf.clip_by_value(cos_theta, -1.0 + epsilon, 1.0 - epsilon)
+
     return tf.reduce_mean(tf.acos(cos_theta))
 
 

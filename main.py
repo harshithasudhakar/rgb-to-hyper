@@ -15,7 +15,10 @@ def train_gan(rgb_images, hsi_images, generator: Generator, discriminator: Discr
             generator=generator, discriminator=discriminator)
         checkpoint.restore(tf.train.latest_checkpoint('./checkpoints/'))
     else:
-        pass
+        checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
+                                         discriminator_optimizer=discriminator_optimizer,
+                                         generator=generator,
+                                         discriminator=discriminator)
 
     rgb_images = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
     hsi_images = tf.convert_to_tensor(hsi_images, dtype=tf.float32)
@@ -124,10 +127,6 @@ if __name__ == "__main__":
             config.CHECKPOINT_DIR, config.LOCAL_CHECKPOINT_PREFIX)
     else:
         print("Error.")
-    checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
-                                     discriminator_optimizer=discriminator_optimizer,
-                                     generator=generator,
-                                     discriminator=discriminator)
 
     train_gan(rgb_images, hsi_images,  generator=generator,
               discriminator=discriminator, mode=mode)
