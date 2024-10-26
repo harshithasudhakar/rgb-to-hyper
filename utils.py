@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 import tifffile as tiff
 import tensorflow as tf
 from PIL import Image
@@ -223,3 +224,33 @@ def aggregate_weights():
     gen.set_weights(gen_weights)
     disc.set_weights(disc_weights)
     checkpoint.save('checkpoints/global_1ckpt')
+
+
+def visualize_generated_images(rgb_batch, generated_hsi, hsi_batch, epoch, batch):
+    # Assuming generated_hsi and hsi_batch are tensors in [batch_size, height, width, channels]
+    fig, axes = plt.subplots(3, len(rgb_batch), figsize=(15, 5))
+
+    for i in range(len(rgb_batch)):
+        # Convert each tensor to a numpy array
+        rgb_img = rgb_batch[i].numpy()
+        gen_img = generated_hsi[i].numpy()
+        real_img = hsi_batch[i].numpy()
+
+        # Display RGB input
+        axes[0, i].imshow(rgb_img)
+        axes[0, i].axis('off')
+        axes[0, i].set_title('RGB Input')
+
+        # Display Generated HSI
+        # Select first 3 channels as an RGB approximation
+        axes[1, i].imshow(gen_img[:, :, :3])
+        axes[1, i].axis('off')
+        axes[1, i].set_title('Generated HSI')
+
+        # Display Real HSI
+        axes[2, i].imshow(real_img[:, :, :3])  # Same here for real HSI
+        axes[2, i].axis('off')
+        axes[2, i].set_title('Real HSI')
+
+    plt.suptitle(f'Epoch {epoch}, Batch {batch}')
+    plt.show()
