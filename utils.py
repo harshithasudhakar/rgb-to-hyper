@@ -241,16 +241,30 @@ def visualize_generated_images(rgb_batch, generated_hsi, hsi_batch, epoch, batch
         axes[0, i].axis('off')
         axes[0, i].set_title('RGB Input')
 
-        # Display Generated HSI
-        # Select first 3 channels as an RGB approximation
-        axes[1, i].imshow(gen_img[:, :, :3])
+        # Display Generated HSI as a composite image
+        gen_img_composite = gen_img.mean(axis=-1)  # Average intensity across all channels
+        axes[1, i].imshow(gen_img_composite, cmap='gray')
         axes[1, i].axis('off')
-        axes[1, i].set_title('Generated HSI')
+        axes[1, i].set_title('Generated HSI Composite')
 
-        # Display Real HSI
-        axes[2, i].imshow(real_img[:, :, :3])  # Same here for real HSI
+        # Display Real HSI as a composite image
+        real_img_composite = real_img.mean(axis=-1)  # Average intensity across all channels
+        axes[2, i].imshow(real_img_composite, cmap='gray')
         axes[2, i].axis('off')
-        axes[2, i].set_title('Real HSI')
+        axes[2, i].set_title('Real HSI Composite')
 
     plt.suptitle(f'Epoch {epoch}, Batch {batch}')
-    plt.show()
+    
+    # Save the plot to a file
+    output_dir = "output_images"
+    if not os.path.exists(output_dir):
+        print(f"Creating directory: {output_dir}")
+        os.makedirs(output_dir, exist_ok=True)
+    else:
+        print(f"Directory already exists: {output_dir}")
+    
+    file_path = os.path.join(output_dir, f'epoch_{epoch}_batch_{batch}.png')
+    print(f"Saving plot to: {file_path}")
+    plt.savefig(file_path)
+    plt.close()
+    print(f"Plot saved successfully.")
