@@ -241,17 +241,17 @@ def visualize_generated_images(rgb_batch, generated_hsi, hsi_batch, epoch, batch
         axes[0, i].axis('off')
         axes[0, i].set_title('RGB Input')
 
+        # Display Original HSI as a composite image
+        real_img_composite = real_img.mean(axis=-1)  # Average intensity across all channels
+        axes[1, i].imshow(real_img_composite, cmap='gray')
+        axes[1, i].axis('off')
+        axes[1, i].set_title('Original HSI Composite')
+
         # Display Generated HSI as a composite image
         gen_img_composite = gen_img.mean(axis=-1)  # Average intensity across all channels
-        axes[1, i].imshow(gen_img_composite, cmap='gray')
-        axes[1, i].axis('off')
-        axes[1, i].set_title('Generated HSI Composite')
-
-        # Display Real HSI as a composite image
-        real_img_composite = real_img.mean(axis=-1)  # Average intensity across all channels
-        axes[2, i].imshow(real_img_composite, cmap='gray')
+        axes[2, i].imshow(gen_img_composite, cmap='gray')
         axes[2, i].axis('off')
-        axes[2, i].set_title('Real HSI Composite')
+        axes[2, i].set_title('Generated HSI Composite')
 
     plt.suptitle(f'Epoch {epoch}, Batch {batch}')
     
