@@ -3,7 +3,7 @@ import os
 import config
 import numpy as np
 import tensorflow as tf
-from extract import extract_bands
+from .extract import extract_bands
 from utils import pair_img, load_rgb_images, load_hsi_images_from_all_folders, discriminator_loss, generator_loss, mean_squared_error, peak_signal_to_noise_ratio, spectral_angle_mapper, visualize_generated_images
 from model import Generator, Discriminator
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -73,6 +73,9 @@ def train_gan(rgb_images, hsi_images, generator: Generator, discriminator: Discr
             mse = mean_squared_error(hsi_batch, generated_hsi_resized)
             psnr = peak_signal_to_noise_ratio(hsi_batch, generated_hsi_resized)
             sam = spectral_angle_mapper(hsi_batch, generated_hsi_resized)
+
+            visualize_generated_images(
+                augmented_rgb_batch, generated_hsi, hsi_batch, epoch, i // config.BATCH_SIZE)
 
             """
             with summary_writer.as_default():
