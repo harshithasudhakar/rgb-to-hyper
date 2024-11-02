@@ -1,144 +1,131 @@
-# main.py
 import os
 import config
+import numpy as np
 import tensorflow as tf
-from config import IMG_HEIGHT, IMG_WIDTH
+from extract import extract_bands
+from utils import pair_img, load_rgb_images, load_hsi_images_from_all_folders, discriminator_loss, generator_loss, mean_squared_error, peak_signal_to_noise_ratio, spectral_angle_mapper, visualize_generated_images
 from model import Generator, Discriminator
-from utils import load_paired_images, discriminator_loss, generator_loss, mean_squared_error, \
-    peak_signal_to_noise_ratio, spectral_angle_mapper, visualize_generated_images, apply_paired_augmentation
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
+# Wasserstein Loss with Gradient Penalty for improved GAN training
+def discriminator_loss(disc_real_output, disc_fake_output):
+    return tf.reduce_mean(disc_fake_output) - tf.reduce_mean(disc_real_output)
 
-def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
-              discriminator: Discriminator, target_size=(IMG_WIDTH, IMG_HEIGHT),
-              mode="global"):
-    """
-    Train GAN with properly paired RGB and HSI images, using synchronized augmentation.
-    """
-    # Set up checkpointing based on mode
-    if mode == "global":
-        checkpoint = tf.train.Checkpoint(
-            generator=generator, discriminator=discriminator)
-        checkpoint.restore(tf.train.latest_checkpoint('./checkpoints/'))
-    else:
-        checkpoint = tf.train.Checkpoint(
-            generator_optimizer=generator_optimizer,
-            discriminator_optimizer=discriminator_optimizer,
-            generator=generator,
-            discriminator=discriminator)
+def gradient_penalty(discriminator, real_data, fake_data):
+    alpha = tf.random.uniform([real_data.shape[0], 1, 1, 1], 0.0, 1.0)
+    interpolated = alpha * real_data + (1 - alpha) * fake_data
+    with tf.GradientTape() as gp_tape:
+        gp_tape.watch(interpolated)
+        disc_interpolated = discriminator(interpolated)
+    gradients = gp_tape.gradient(disc_interpolated, [interpolated])[0]
+    gradients_norm = tf.sqrt(tf.reduce_sum(tf.square(gradients), axis=[1, 2, 3]))
+    gradient_penalty = tf.reduce_mean((gradients_norm - 1.0) ** 2)
+    return gradient_penalty
 
-    # Load paired images
-    print("Loading and pairing images...")
-    try:
-        rgb_images, hsi_images = load_paired_images(rgb_path, hsi_path)
-        print(f"Successfully loaded {len(rgb_images)} paired images")
-    except Exception as e:
-        print(f"Error loading images: {str(e)}")
-        return
+# Adjusted perceptual loss
+def perceptual_loss(generated, real):
+    vgg = tf.keras.applications.VGG19(include_top=False, weights='imagenet', input_shape=generated.shape[1:])
+    vgg.trainable = False
+    generated_features = vgg(generated)
+    real_features = vgg(real)
+    return tf.reduce_mean(tf.square(generated_features - real_features))
 
-    # Convert to tensors
+# Custom brightness adjustment to guide generated images to the expected brightness
+def brightness_loss(generated, real):
+    return tf.reduce_mean(tf.abs(tf.reduce_mean(generated, axis=[1, 2]) - tf.reduce_mean(real, axis=[1, 2])))
+
+# Updated GAN training loop
+def train_gan(rgb_images, hsi_images, generator, discriminator, mode="local"):
+    # Initialize the checkpoint for saving model states
+    checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
+                                      discriminator_optimizer=discriminator_optimizer,
+                                      generator=generator,
+                                      discriminator=discriminator)
+
     rgb_images = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
     hsi_images = tf.convert_to_tensor(hsi_images, dtype=tf.float32)
 
-    # Set up data augmentation
-
-    # Training loop
     for epoch in range(config.EPOCHS):
-        print(f"\nEpoch {epoch+1}/{config.EPOCHS}")
-
         for i in range(0, len(rgb_images), config.BATCH_SIZE):
-            # Get batches
             rgb_batch = rgb_images[i:i + config.BATCH_SIZE]
             hsi_batch = hsi_images[i:i + config.BATCH_SIZE]
 
-            # Apply synchronized augmentation
-            try:
-                augmented_rgb_batch, augmented_hsi_batch = apply_paired_augmentation(
-                    rgb_batch, hsi_batch)
-            except Exception as e:
-                print(f"Error in data augmentation: {str(e)}")
-                continue
+            # Augment RGB batch images
+            augmented_rgb_batch = next(data_gen.flow(rgb_batch.numpy(), batch_size=config.BATCH_SIZE))
+            augmented_rgb_batch = tf.convert_to_tensor(augmented_rgb_batch, dtype=tf.float32)
 
-            # Generator forward pass
+            # Generate HSI and resize to target shape
             generated_hsi = generator(augmented_rgb_batch)
+            target_shape = tf.shape(hsi_batch)[1:3]
+            generated_hsi_resized = tf.image.resize(generated_hsi, target_shape)
 
-            # Visualize current results
-            visualize_generated_images(
-                augmented_rgb_batch, generated_hsi, augmented_hsi_batch,
-                epoch, i // config.BATCH_SIZE)
+            combined_real = tf.concat([hsi_batch, rgb_batch], axis=-1)
+            combined_fake = tf.concat([generated_hsi_resized, augmented_rgb_batch], axis=-1)
 
-            # Prepare discriminator inputs
-            combined_real = tf.concat(
-                [augmented_hsi_batch, augmented_rgb_batch], axis=-1)
-            combined_fake = tf.concat(
-                [generated_hsi, augmented_rgb_batch], axis=-1)
-
-            # Train discriminator
+            # Discriminator training with gradient penalty
             with tf.GradientTape() as disc_tape:
                 disc_real = discriminator(combined_real)
                 disc_fake = discriminator(combined_fake)
-                disc_loss = discriminator_loss(disc_real, disc_fake)
+                disc_loss = discriminator_loss(disc_real, disc_fake) + 10.0 * gradient_penalty(discriminator, combined_real, combined_fake)
 
-            gradients_of_discriminator = disc_tape.gradient(
-                disc_loss, discriminator.trainable_variables)
-            discriminator_optimizer.apply_gradients(
-                zip(gradients_of_discriminator, discriminator.trainable_variables))
+            gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
+            discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
 
-            # Train generator
+            # Generator training with updated losses
             with tf.GradientTape() as gen_tape:
                 generated_hsi = generator(augmented_rgb_batch)
-                combined_fake = tf.concat(
-                    [generated_hsi, augmented_rgb_batch], axis=-1)
+                generated_hsi_resized = tf.image.resize(generated_hsi, target_shape)
+                combined_fake = tf.concat([generated_hsi_resized, augmented_rgb_batch], axis=-1)
                 gen_loss = generator_loss(discriminator(combined_fake))
 
-            gradients_of_generator = gen_tape.gradient(
-                gen_loss, generator.trainable_variables)
-            generator_optimizer.apply_gradients(
-                zip(gradients_of_generator, generator.trainable_variables))
+                # SAM, perceptual, and brightness losses
+                sam_loss = spectral_angle_mapper(hsi_batch, generated_hsi_resized)
+                perceptual = perceptual_loss(generated_hsi_resized, hsi_batch)
+                brightness_diff = brightness_loss(generated_hsi_resized, hsi_batch)
+
+                # Adding perceptual, SAM, and brightness losses to generator loss
+                gen_loss += 0.1 * sam_loss + 0.1 * perceptual + 0.05 * brightness_diff
+
+            gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
+            generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
 
             # Calculate metrics
-            mse = mean_squared_error(augmented_hsi_batch, generated_hsi)
-            psnr = peak_signal_to_noise_ratio(
-                augmented_hsi_batch, generated_hsi)
-            sam = spectral_angle_mapper(augmented_hsi_batch, generated_hsi)
+            mse = mean_squared_error(hsi_batch, generated_hsi_resized)
+            psnr = peak_signal_to_noise_ratio(hsi_batch, generated_hsi_resized)
+            sam = spectral_angle_mapper(hsi_batch, generated_hsi_resized)
 
-            # Print progress
-            batch_idx = i // config.BATCH_SIZE
-            print(f'Epoch: {epoch}, Batch: {batch_idx}, '
-                  f'Disc Loss: {disc_loss.numpy():.4f}, '
-                  f'Gen Loss: {gen_loss.numpy():.4f}, '
-                  f'MSE: {mse.numpy():.4f}, '
-                  f'PSNR: {psnr.numpy():.4f}, '
-                  f'SAM: {sam.numpy():.4f}')
+            visualize_generated_images(augmented_rgb_batch, generated_hsi, hsi_batch, epoch, i // config.BATCH_SIZE)
 
-        # Save checkpoint at end of epoch
+            print(f'Epoch: {epoch}, Batch: {i // config.BATCH_SIZE}, Disc Loss: {disc_loss.numpy()}, Gen Loss: {gen_loss.numpy()}, MSE: {mse.numpy()}, PSNR: {psnr.numpy()}, SAM: {sam.numpy()}')
+        
+        # Save the model checkpoint
         checkpoint.save(file_prefix=checkpoint_path)
 
-
-# Train the GAN
 if __name__ == "__main__":
-    # Data Augmentation
-    # train_global()
     mode = "global"
+    data_gen = ImageDataGenerator(rotation_range=20, width_shift_range=0.1, height_shift_range=0.1, shear_range=0.1,
+                                  zoom_range=0.1, horizontal_flip=True, fill_mode='nearest')
+
+    # Load images
+    rgb_images = load_rgb_images(config.RGB_IMAGE_PATH)
+    hsi_images = load_hsi_images_from_all_folders(config.HSI_IMAGE_PATH)
+
+    # Initialize models
     generator = Generator()
     discriminator = Discriminator()
 
-    generator_optimizer = tf.keras.optimizers.Adam(
-        config.LEARNING_RATE, beta_1=config.BETA_1)
-    discriminator_optimizer = tf.keras.optimizers.Adam(
-        config.LEARNING_RATE, beta_1=config.BETA_1)
+    # Define learning rate scheduler
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate=config.LEARNING_RATE, decay_steps=1000, decay_rate=0.96)
 
-    # Logging and Checkpointing
+    # Optimizers with learning rate scheduler
+    generator_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule, beta_1=config.BETA_1)
+    discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule, beta_1=config.BETA_1)
+
     log_dir = config.LOG_DIR
     summary_writer = tf.summary.create_file_writer(log_dir)
-    # To save model checkpoints
-    if mode == "global":
-        checkpoint_path = os.path.join(
-            config.CHECKPOINT_DIR, config.GLOBAL_CHECKPOINT_PREFIX)
-    elif mode == "local":
-        checkpoint_path = os.path.join(
-            config.CHECKPOINT_DIR, config.LOCAL_CHECKPOINT_PREFIX)
-    else:
-        print("Error.")
 
-    train_gan(config.RGB_IMAGE_PATH, config.HSI_IMAGE_PATH, generator=generator,
-              discriminator=discriminator, mode=mode)
+    checkpoint_path = os.path.join(config.CHECKPOINT_DIR, config.GLOBAL_CHECKPOINT_PREFIX) if mode == "global" else os.path.join(config.CHECKPOINT_DIR, config.LOCAL_CHECKPOINT_PREFIX)
+
+    # Start training
+    train_gan(rgb_images, hsi_images, generator=generator, discriminator=discriminator, mode=mode)
