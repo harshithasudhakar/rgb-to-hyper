@@ -22,12 +22,33 @@ def gradient_penalty(discriminator, real_data, fake_data):
     gradient_penalty = tf.reduce_mean((gradients_norm - 1.0) ** 2)
     return gradient_penalty
 
-# Adjusted perceptual loss
+# Custom perceptual loss function using a custom CNN model
+def create_custom_perceptual_model(input_shape):
+    inputs = tf.keras.Input(shape=input_shape)
+    
+    # Example architecture
+    x = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', padding='same')(inputs)
+    x = tf.keras.layers.MaxPooling2D((2, 2))(x)
+
+    x = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    x = tf.keras.layers.MaxPooling2D((2, 2))(x)
+
+    x = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = tf.keras.layers.MaxPooling2D((2, 2))(x)
+
+    x = tf.keras.layers.Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    x = tf.keras.layers.MaxPooling2D((2, 2))(x)
+
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dense(512, activation='relu')(x)
+
+    model = tf.keras.Model(inputs, x)
+    return model
+
 def perceptual_loss(generated, real):
-    vgg = tf.keras.applications.VGG19(include_top=False, weights='imagenet', input_shape=generated.shape[1:])
-    vgg.trainable = False
-    generated_features = vgg(generated)
-    real_features = vgg(real)
+    perceptual_model = create_custom_perceptual_model(input_shape=(256, 256, 31))
+    generated_features = perceptual_model(generated)
+    real_features = perceptual_model(real)
     return tf.reduce_mean(tf.square(generated_features - real_features))
 
 # Custom brightness adjustment to guide generated images to the expected brightness
