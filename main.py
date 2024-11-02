@@ -1,52 +1,78 @@
 # main.py
 import os
 import config
-import numpy as np
 import tensorflow as tf
-from .extract import extract_bands
-from utils import pair_img, load_rgb_images, load_hsi_images_from_all_folders, discriminator_loss, generator_loss, mean_squared_error, peak_signal_to_noise_ratio, spectral_angle_mapper, visualize_generated_images
+from config import IMG_HEIGHT, IMG_WIDTH
 from model import Generator, Discriminator
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from utils import load_paired_images, discriminator_loss, generator_loss, mean_squared_error, \
+    peak_signal_to_noise_ratio, spectral_angle_mapper, visualize_generated_images, apply_paired_augmentation
 
 
-def train_gan(rgb_images, hsi_images, generator: Generator, discriminator: Discriminator, mode="local"):
+def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
+              discriminator: Discriminator, target_size=(IMG_WIDTH, IMG_HEIGHT),
+              mode="global"):
+    """
+    Train GAN with properly paired RGB and HSI images, using synchronized augmentation.
+    """
+    # Set up checkpointing based on mode
     if mode == "global":
         checkpoint = tf.train.Checkpoint(
             generator=generator, discriminator=discriminator)
         checkpoint.restore(tf.train.latest_checkpoint('./checkpoints/'))
     else:
-        checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
-                                         discriminator_optimizer=discriminator_optimizer,
-                                         generator=generator,
-                                         discriminator=discriminator)
+        checkpoint = tf.train.Checkpoint(
+            generator_optimizer=generator_optimizer,
+            discriminator_optimizer=discriminator_optimizer,
+            generator=generator,
+            discriminator=discriminator)
 
+    # Load paired images
+    print("Loading and pairing images...")
+    try:
+        rgb_images, hsi_images = load_paired_images(rgb_path, hsi_path)
+        print(f"Successfully loaded {len(rgb_images)} paired images")
+    except Exception as e:
+        print(f"Error loading images: {str(e)}")
+        return
+
+    # Convert to tensors
     rgb_images = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
     hsi_images = tf.convert_to_tensor(hsi_images, dtype=tf.float32)
 
+    # Set up data augmentation
+
+    # Training loop
     for epoch in range(config.EPOCHS):
+        print(f"\nEpoch {epoch+1}/{config.EPOCHS}")
+
         for i in range(0, len(rgb_images), config.BATCH_SIZE):
+            # Get batches
             rgb_batch = rgb_images[i:i + config.BATCH_SIZE]
             hsi_batch = hsi_images[i:i + config.BATCH_SIZE]
 
-            augmented_rgb_batch = next(data_gen.flow(
-                rgb_batch.numpy(), batch_size=config.BATCH_SIZE))
-            augmented_rgb_batch = tf.convert_to_tensor(
-                augmented_rgb_batch, dtype=tf.float32)
+            # Apply synchronized augmentation
+            try:
+                augmented_rgb_batch, augmented_hsi_batch = apply_paired_augmentation(
+                    rgb_batch, hsi_batch)
+            except Exception as e:
+                print(f"Error in data augmentation: {str(e)}")
+                continue
 
+            # Generator forward pass
             generated_hsi = generator(augmented_rgb_batch)
+
+            # Visualize current results
             visualize_generated_images(
-                augmented_rgb_batch, generated_hsi, hsi_batch, epoch, i // config.BATCH_SIZE)
+                augmented_rgb_batch, generated_hsi, augmented_hsi_batch,
+                epoch, i // config.BATCH_SIZE)
 
-            target_shape = tf.shape(hsi_batch)[1:3]
-            generated_hsi_resized = tf.image.resize(
-                generated_hsi, target_shape)
-            augmented_rgb_batch_resized = tf.image.resize(
-                augmented_rgb_batch, target_shape)
-
-            combined_real = tf.concat([hsi_batch, rgb_batch], axis=-1)
+            # Prepare discriminator inputs
+            combined_real = tf.concat(
+                [augmented_hsi_batch, augmented_rgb_batch], axis=-1)
             combined_fake = tf.concat(
-                [generated_hsi_resized, augmented_rgb_batch_resized], axis=-1)
+                [generated_hsi, augmented_rgb_batch], axis=-1)
 
+            # Train discriminator
             with tf.GradientTape() as disc_tape:
                 disc_real = discriminator(combined_real)
                 disc_fake = discriminator(combined_fake)
@@ -57,12 +83,11 @@ def train_gan(rgb_images, hsi_images, generator: Generator, discriminator: Discr
             discriminator_optimizer.apply_gradients(
                 zip(gradients_of_discriminator, discriminator.trainable_variables))
 
+            # Train generator
             with tf.GradientTape() as gen_tape:
                 generated_hsi = generator(augmented_rgb_batch)
-                generated_hsi_resized = tf.image.resize(
-                    generated_hsi, target_shape)
                 combined_fake = tf.concat(
-                    [generated_hsi_resized, augmented_rgb_batch_resized], axis=-1)
+                    [generated_hsi, augmented_rgb_batch], axis=-1)
                 gen_loss = generator_loss(discriminator(combined_fake))
 
             gradients_of_generator = gen_tape.gradient(
@@ -70,27 +95,22 @@ def train_gan(rgb_images, hsi_images, generator: Generator, discriminator: Discr
             generator_optimizer.apply_gradients(
                 zip(gradients_of_generator, generator.trainable_variables))
 
-            mse = mean_squared_error(hsi_batch, generated_hsi_resized)
-            psnr = peak_signal_to_noise_ratio(hsi_batch, generated_hsi_resized)
-            sam = spectral_angle_mapper(hsi_batch, generated_hsi_resized)
+            # Calculate metrics
+            mse = mean_squared_error(augmented_hsi_batch, generated_hsi)
+            psnr = peak_signal_to_noise_ratio(
+                augmented_hsi_batch, generated_hsi)
+            sam = spectral_angle_mapper(augmented_hsi_batch, generated_hsi)
 
-            visualize_generated_images(
-                augmented_rgb_batch, generated_hsi, hsi_batch, epoch, i // config.BATCH_SIZE)
+            # Print progress
+            batch_idx = i // config.BATCH_SIZE
+            print(f'Epoch: {epoch}, Batch: {batch_idx}, '
+                  f'Disc Loss: {disc_loss.numpy():.4f}, '
+                  f'Gen Loss: {gen_loss.numpy():.4f}, '
+                  f'MSE: {mse.numpy():.4f}, '
+                  f'PSNR: {psnr.numpy():.4f}, '
+                  f'SAM: {sam.numpy():.4f}')
 
-            """
-            with summary_writer.as_default():
-                tf.summary.scalar('Discriminator Loss', disc_loss, step=epoch *
-                                  len(rgb_images) // config.BATCH_SIZE + i // config.BATCH_SIZE)
-                tf.summary.scalar('Generator Loss', gen_loss, step=epoch *
-                                  len(rgb_images) // config.BATCH_SIZE + i // config.BATCH_SIZE)
-                tf.summary.scalar('MSE', mse, step=epoch * len(rgb_images) //
-                                  config.BATCH_SIZE + i // config.BATCH_SIZE)
-                tf.summary.scalar('PSNR', psnr, step=epoch * len(rgb_images) //
-                                  config.BATCH_SIZE + i // config.BATCH_SIZE)
-                tf.summary.scalar('SAM', sam, step=epoch * len(rgb_images) //
-                                  config.BATCH_SIZE + i // config.BATCH_SIZE)
-            """
-            print(f'Epoch: {epoch}, Batch: {i // config.BATCH_SIZE}, Disc Loss: {disc_loss.numpy()}, Gen Loss: {gen_loss.numpy()}, MSE: {mse.numpy()}, PSNR: {psnr.numpy()}, SAM: {sam.numpy()}')
+        # Save checkpoint at end of epoch
         checkpoint.save(file_prefix=checkpoint_path)
 
 
@@ -99,19 +119,6 @@ if __name__ == "__main__":
     # Data Augmentation
     # train_global()
     mode = "global"
-    data_gen = ImageDataGenerator(rotation_range=20,
-                                  width_shift_range=0.1,
-                                  height_shift_range=0.1,
-                                  shear_range=0.1,
-                                  zoom_range=0.1,
-                                  horizontal_flip=True,
-                                  fill_mode='nearest')
-
-    # Load data
-    rgb_images = load_rgb_images(config.RGB_IMAGE_PATH)
-    hsi_images = load_hsi_images_from_all_folders(config.HSI_IMAGE_PATH)
-
-    # Model setup
     generator = Generator()
     discriminator = Discriminator()
 
@@ -133,5 +140,5 @@ if __name__ == "__main__":
     else:
         print("Error.")
 
-    train_gan(rgb_images, hsi_images,  generator=generator,
+    train_gan(config.RGB_IMAGE_PATH, config.HSI_IMAGE_PATH, generator=generator,
               discriminator=discriminator, mode=mode)

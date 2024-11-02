@@ -1,4 +1,4 @@
-EPOCHS = 15
+EPOCHS = 16
 BETA_1 = 0.5
 BATCH_SIZE = 4
 IMG_WIDTH = 256
@@ -12,3 +12,4 @@ LOG_DIR = "logs/"
 MAT_IMAGE_PATH = "data/pre/"
 RGB_IMAGE_PATH = "data/rgb/"
 HSI_IMAGE_PATH = "data/post/"
+OUT_DIR_PATH = "data/out/"
