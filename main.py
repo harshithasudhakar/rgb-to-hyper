@@ -155,8 +155,6 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
 
 # Train the GAN
 if __name__ == "__main__":
-    # Data Augmentation
-    # train_global()
     mode = "global"
     generator = Generator()
     discriminator = Discriminator()
