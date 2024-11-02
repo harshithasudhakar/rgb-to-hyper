@@ -1,11 +1,10 @@
-# main.py
 import os
 import config
 import tensorflow as tf
 from config import IMG_HEIGHT, IMG_WIDTH
 from model import Generator, Discriminator
-from utils import load_paired_images, discriminator_loss, generator_loss, mean_squared_error, \
-    peak_signal_to_noise_ratio, spectral_angle_mapper, visualize_generated_images, apply_paired_augmentation
+from loss import peak_signal_to_noise_ratio, spectral_angle_mapper, generator_loss, mean_squared_error, discriminator_loss
+from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation
 
 
 def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
@@ -14,6 +13,10 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
     """
     Train GAN with properly paired RGB and HSI images, using synchronized augmentation.
     """
+    # Create metrics directory if it doesn't exist
+    metrics_dir = './metrics'
+    os.makedirs(metrics_dir, exist_ok=True)
+
     # Set up checkpointing based on mode
     if mode == "global":
         checkpoint = tf.train.Checkpoint(
@@ -39,7 +42,14 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
     rgb_images = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
     hsi_images = tf.convert_to_tensor(hsi_images, dtype=tf.float32)
 
-    # Set up data augmentation
+    # Dictionary to store final epoch metrics
+    final_metrics = {
+        'discriminator_loss': [],
+        'generator_loss': [],
+        'mse': [],
+        'psnr': [],
+        'sam': []
+    }
 
     # Training loop
     for epoch in range(config.EPOCHS):
@@ -88,7 +98,8 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 generated_hsi = generator(augmented_rgb_batch)
                 combined_fake = tf.concat(
                     [generated_hsi, augmented_rgb_batch], axis=-1)
-                gen_loss = generator_loss(discriminator(combined_fake))
+                gen_loss = generator_loss(discriminator(
+                    combined_fake), generated_hsi, augmented_hsi_batch)
 
             gradients_of_generator = gen_tape.gradient(
                 gen_loss, generator.trainable_variables)
@@ -101,6 +112,14 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 augmented_hsi_batch, generated_hsi)
             sam = spectral_angle_mapper(augmented_hsi_batch, generated_hsi)
 
+            # Store metrics for the final epoch
+            if epoch == config.EPOCHS - 1:
+                final_metrics['discriminator_loss'].append(disc_loss.numpy())
+                final_metrics['generator_loss'].append(gen_loss.numpy())
+                final_metrics['mse'].append(mse.numpy())
+                final_metrics['psnr'].append(psnr.numpy())
+                final_metrics['sam'].append(sam.numpy())
+
             # Print progress
             batch_idx = i // config.BATCH_SIZE
             print(f'Epoch: {epoch}, Batch: {batch_idx}, '
@@ -112,6 +131,26 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
 
         # Save checkpoint at end of epoch
         checkpoint.save(file_prefix=checkpoint_path)
+
+        # Save metrics after the final epoch
+        if epoch == config.EPOCHS - 1:
+            metrics_file = os.path.join(
+                metrics_dir, f'final_metrics_{mode}.txt')
+            with open(metrics_file, 'w') as f:
+                f.write(f"Training Mode: {mode}\n")
+                f.write(f"Number of Batches: {len(final_metrics['mse'])}\n\n")
+                f.write("Final Epoch Metrics (Average across all batches):\n")
+                f.write("-" * 50 + "\n")
+                f.write(
+                    f"Discriminator Loss: {sum(final_metrics['discriminator_loss']) / len(final_metrics['discriminator_loss']):.4f}\n")
+                f.write(
+                    f"Generator Loss: {sum(final_metrics['generator_loss']) / len(final_metrics['generator_loss']):.4f}\n")
+                f.write(
+                    f"Mean Squared Error: {sum(final_metrics['mse']) / len(final_metrics['mse']):.4f}\n")
+                f.write(
+                    f"Peak Signal-to-Noise Ratio: {sum(final_metrics['psnr']) / len(final_metrics['psnr']):.4f}\n")
+                f.write(
+                    f"Spectral Angle Mapper: {sum(final_metrics['sam']) / len(final_metrics['sam']):.4f}\n")
 
 
 # Train the GAN

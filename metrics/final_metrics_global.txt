@@ -1,0 +1,10 @@
+Training Mode: global
+Number of Batches: 19
+
+Final Epoch Metrics (Average across all batches):
+--------------------------------------------------
+Discriminator Loss: 0.7663
+Generator Loss: 2.9027
+Mean Squared Error: 0.0105
+Peak Signal-to-Noise Ratio: 20.6486
+Spectral Angle Mapper: 0.4743
