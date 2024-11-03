@@ -375,3 +375,25 @@ def extract_bands(input_dir: str, output_dir: str):
                 f"Extracted {cube_data.shape[2]} bands from {mat_file} and saved as TIFF in {mat_output_folder}.")
         else:
             print(f"'cube' key not found in {mat_file}.")
+
+def npy_to_png(directory_path, output_directory, mode='rgb'):
+    os.makedirs(output_directory, exist_ok=True)
+    for filename in os.listdir(directory_path):
+        if filename.endswith('.npy'):
+            npy_path = os.path.join(directory_path, filename)
+            png_filename = os.path.splitext(filename)[0] + '.png'
+            png_path = os.path.join(output_directory, png_filename)
+            data = np.load(npy_path)
+            if mode == 'rgb':
+                rgb_data = data[:, :, [0, 15, 30]]
+                rgb_data = (rgb_data - rgb_data.min()) / (rgb_data.max() - rgb_data.min()) * 255
+                image_data = rgb_data.astype(np.uint8)
+            elif mode == 'grayscale':
+                grayscale_data = np.mean(data, axis=2)
+                grayscale_data = (grayscale_data - grayscale_data.min()) / (grayscale_data.max() - grayscale_data.min()) * 255
+                image_data = grayscale_data.astype(np.uint8)
+            else:
+                raise ValueError("Invalid mode. Choose 'rgb' or 'grayscale'.")
+            image = Image.fromarray(image_data)
+            image.save(png_path)
+            print(f"Saved {png_path}")
