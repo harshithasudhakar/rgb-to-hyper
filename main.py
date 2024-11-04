@@ -1,7 +1,10 @@
+# Generates 31 .tiffs for each HSI (each .tiff corresponds to each channel in HSI)
 import os
 import numpy as np
+import config
 import tensorflow as tf
-from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH, HSI_IMAGE_PATH, EPOCHS, BATCH_SIZE, LEARNING_RATE, BETA_1, CHECKPOINT_DIR, LOG_DIR
+import imageio
+from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH,HSI_IMAGE_PATH
 from model import Generator, Discriminator
 from loss import peak_signal_to_noise_ratio, spectral_angle_mapper, generator_loss, mean_squared_error, discriminator_loss
 from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation
@@ -55,13 +58,13 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
     }
 
     # Training loop
-    for epoch in range(EPOCHS):
-        print(f"\nEpoch {epoch+1}/{EPOCHS}")
+    for epoch in range(config.EPOCHS):
+        print(f"\nEpoch {epoch+1}/{config.EPOCHS}")
 
-        for i in range(0, len(rgb_images), BATCH_SIZE):
+        for i in range(0, len(rgb_images), config.BATCH_SIZE):
             # Get batches
-            rgb_batch = rgb_images[i:i + BATCH_SIZE]
-            hsi_batch = hsi_images[i:i + BATCH_SIZE]
+            rgb_batch = rgb_images[i:i + config.BATCH_SIZE]
+            hsi_batch = hsi_images[i:i + config.BATCH_SIZE]
 
             # Apply synchronized augmentation
             try:
@@ -77,20 +80,26 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
             # Visualize current results
             visualize_generated_images(
                 augmented_rgb_batch, generated_hsi, augmented_hsi_batch,
-                epoch, i // BATCH_SIZE)
+                epoch, i // config.BATCH_SIZE)
 
-            # Save generated HSI images as stacked bands
+            # Save generated HSI images
             for j in range(generated_hsi.shape[0]):
                 # Convert tensor to numpy array and clip values if necessary
                 generated_hsi_np = tf.clip_by_value(generated_hsi[j], 0, 1).numpy()
-
-                # Stack bands along the last dimension
-                stacked_hsi_np = np.moveaxis(generated_hsi_np, 0, -1)  # Move channels to the last axis
-
-                # Save as a .npy file instead of TIFF
-                npy_path = os.path.join(generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//BATCH_SIZE}_img{j}.npy')
-                np.save(npy_path, stacked_hsi_np)
-                print(f"Generated HSI saved successfully to: {npy_path}")
+                
+                # Normalize and ensure the data is in the correct format
+                # Depending on your specific needs, you may want to apply different transformations.
+                generated_hsi_np = np.moveaxis(generated_hsi_np, -1, 0)  # Move channels to first dimension
+                
+                # Ensure that the image is in a valid shape (C, H, W) for saving
+                if generated_hsi_np.ndim == 3 and generated_hsi_np.shape[0] > 3:
+                    # Save as a multi-page TIFF file if there are more than 3 channels
+                    image_path = os.path.join(generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.tiff')
+                    imageio.mimwrite(image_path, generated_hsi_np.astype(np.float32), format='tiff')
+                else:
+                    # Otherwise, save as normal RGB or grayscale
+                    image_path = os.path.join(generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.png')
+                    imageio.imwrite(image_path, (generated_hsi_np * 255).astype(np.uint8))  # Scale to 0-255 if saving as PNG
 
             # Prepare discriminator inputs
             combined_real = tf.concat([augmented_hsi_batch, augmented_rgb_batch], axis=-1)
@@ -120,7 +129,7 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
             sam = spectral_angle_mapper(augmented_hsi_batch, generated_hsi)
 
             # Store metrics for the final epoch
-            if epoch == EPOCHS - 1:
+            if epoch == config.EPOCHS - 1:
                 final_metrics['discriminator_loss'].append(disc_loss.numpy())
                 final_metrics['generator_loss'].append(gen_loss.numpy())
                 final_metrics['mse'].append(mse.numpy())
@@ -128,7 +137,7 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 final_metrics['sam'].append(sam.numpy())
 
             # Print progress
-            batch_idx = i // BATCH_SIZE
+            batch_idx = i // config.BATCH_SIZE
             print(f'Epoch: {epoch}, Batch: {batch_idx}, '
                   f'Disc Loss: {disc_loss.numpy():.4f}, '
                   f'Gen Loss: {gen_loss.numpy():.4f}, '
@@ -140,7 +149,7 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
         checkpoint.save(file_prefix=checkpoint_path)
 
         # Save metrics after the final epoch
-        if epoch == EPOCHS - 1:
+        if epoch == config.EPOCHS - 1:
             metrics_file = os.path.join(metrics_dir, f'final_metrics_{mode}.txt')
             with open(metrics_file, 'w') as f:
                 f.write(f"Training Mode: {mode}\n")
@@ -164,18 +173,18 @@ if __name__ == "__main__":
     generator = Generator()
     discriminator = Discriminator()
 
-    generator_optimizer = tf.keras.optimizers.Adam(LEARNING_RATE, beta_1=BETA_1)
-    discriminator_optimizer = tf.keras.optimizers.Adam(LEARNING_RATE, beta_1=BETA_1)
+    generator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE, beta_1=config.BETA_1)
+    discriminator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE, beta_1=config.BETA_1)
 
     # Logging and Checkpointing
-    log_dir = LOG_DIR
+    log_dir = config.LOG_DIR
     summary_writer = tf.summary.create_file_writer(log_dir)
 
     # To save model checkpoints
     if mode == "global":
-        checkpoint_path = os.path.join(CHECKPOINT_DIR, 'ckpt')
+        checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'ckpt')
     else:
-        checkpoint_path = os.path.join(CHECKPOINT_DIR, 'local_ckpt')
+        checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'local_ckpt')
 
     train_gan(rgb_path=RGB_IMAGE_PATH, hsi_path=HSI_IMAGE_PATH,
               generator=generator, discriminator=discriminator,
