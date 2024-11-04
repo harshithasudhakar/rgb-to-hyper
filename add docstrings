@@ -12,6 +12,20 @@ from config import HSI_CHANNELS, IMG_WIDTH, IMG_HEIGHT, OUT_DIR_PATH
 
 
 def load_hsi_images(hsi_dir: str) -> dict:
+    """
+    Loads Hyperspectral Imaging (HSI) images from a specified directory.
+    This function scans through the given directory, identifies subdirectories,
+    and loads TIFF files from each subdirectory into a dictionary. The keys of
+    the dictionary are the filenames of the TIFF images, and the values are the
+    loaded image data.
+    Args:
+        hsi_dir (str): The directory containing subdirectories with HSI images.
+    Returns:
+        dict: A dictionary where the keys are TIFF filenames and the values are
+              the corresponding loaded image data.
+    Prints:
+        The total number of HSI images loaded.
+    """
     hsi_images = {}
 
     for folder in os.listdir(hsi_dir):
@@ -28,6 +42,18 @@ def load_hsi_images(hsi_dir: str) -> dict:
 
 
 def load_tiff_images(tiff_dir):
+    """
+    Loads TIFF images from a specified directory.
+    This function traverses through the given directory, identifies subdirectories,
+    and loads all TIFF images found within those subdirectories into a dictionary.
+    The keys of the dictionary are the filenames of the TIFF images, and the values
+    are the corresponding image data as NumPy arrays.
+    Args:
+        tiff_dir (str): The path to the directory containing TIFF images.
+    Returns:
+        dict: A dictionary where the keys are TIFF filenames and the values are 
+              the image data as NumPy arrays.
+    """
     tiff_images = {}
     for folder in os.listdir(tiff_dir):
         folder_path = os.path.join(tiff_dir, folder)
@@ -42,6 +68,15 @@ def load_tiff_images(tiff_dir):
 
 
 def map_hsi_to_rgb(hsi_images, band_wavelengths, rgb_images):
+    """
+    Maps hyperspectral images (HSI) to RGB images based on specified band wavelengths.
+    Args:
+        hsi_images (dict): A dictionary where keys are filenames and values are hyperspectral image cubes (3D numpy arrays).
+        band_wavelengths (dict): A dictionary where keys are filenames and values are 1D numpy arrays of wavelengths corresponding to the bands in the hyperspectral image cubes.
+        rgb_images (dict): A dictionary where keys are filenames and values are RGB images (3D numpy arrays) to be used for resizing the mapped HSI images if necessary.
+    Returns:
+        dict: A dictionary where keys are filenames and values are the mapped RGB images (3D numpy arrays).
+    """
     mapped_rgb_images = {}
     rgb_wavelengths = {
         "red": 650,
@@ -92,6 +127,15 @@ def map_hsi_to_rgb(hsi_images, band_wavelengths, rgb_images):
 
 
 def check_normalization(hsi_images: dict):
+    """
+    Checks the normalization of hyperspectral images by printing the minimum and maximum values for each image.
+
+    Args:
+        hsi_images (dict): A dictionary where the keys are filenames (str) and the values are hyperspectral images (numpy arrays).
+
+    Returns:
+        None
+    """
     for fname, img in hsi_images.items():
         min_val = img.min()
         max_val = img.max()
@@ -217,6 +261,17 @@ def load_hsi_images_from_all_folders(base_folder: str, rgb_filenames: List[str],
 
 
 def save_mapped_images(mapped_rgb_images, OUT_DIR_PATHectory):
+    """
+    Save mapped RGB images to the specified output directory.
+
+    Args:
+        mapped_rgb_images (dict): A dictionary where the keys are file names (str) 
+                                  and the values are RGB images (numpy arrays).
+        OUT_DIR_PATHectory (str): The path to the output directory where images will be saved.
+
+    Returns:
+        None
+    """
     for rgb_file_name, rgb_image in mapped_rgb_images.items():
         output_path = os.path.join(OUT_DIR_PATHectory, rgb_file_name)
         # Convert to PIL image and save
@@ -226,6 +281,16 @@ def save_mapped_images(mapped_rgb_images, OUT_DIR_PATHectory):
 
 
 def aggregate_weights():
+    """
+    Aggregates the weights of multiple checkpoints for a generator and discriminator model.
+    This function loads the weights from a list of checkpoint paths, averages them, 
+    and then sets the averaged weights back to the generator and discriminator models. 
+    Finally, it saves the aggregated weights to a new checkpoint.
+    Args:
+        None
+    Returns:
+        None
+    """
     ckpt_list: list = ['./checkpoints/abdul_ckpt-2', './checkpoints/akshath_ckpt-2',
                        './checkpoints/harshitha_ckpt-5', './checkpoints/keshihan_ckpt-2',
                        './checkpoints/nihaal_ckpt-2', './checkpoints/hrithik_ckpt-2']
@@ -253,6 +318,18 @@ def aggregate_weights():
 
 
 def visualize_generated_images(rgb_batch, generated_hsi, hsi_batch, epoch, batch):
+    """
+    Visualizes and saves a comparison of RGB input images, generated hyperspectral images (HSI), 
+    and original HSI as composite images.
+    Parameters:
+    rgb_batch (tensor): Batch of RGB input images with shape [batch_size, height, width, channels].
+    generated_hsi (tensor): Batch of generated HSI images with shape [batch_size, height, width, channels].
+    hsi_batch (tensor): Batch of original HSI images with shape [batch_size, height, width, channels].
+    epoch (int): Current epoch number.
+    batch (int): Current batch number.
+    Returns:
+    None
+    """
     # Assuming generated_hsi and hsi_batch are tensors in [batch_size, height, width, channels]
     fig, axes = plt.subplots(3, len(rgb_batch), figsize=(15, 5))
 
@@ -298,6 +375,19 @@ def visualize_generated_images(rgb_batch, generated_hsi, hsi_batch, epoch, batch
 
 
 def apply_paired_augmentation(rgb_batch, hsi_batch):
+    """
+    Apply paired data augmentation to batches of RGB and HSI images.
+    This function takes batches of RGB and HSI images, applies the same random
+    transformations to both images in each pair to ensure that the augmentations
+    are synchronized, and returns the augmented batches.
+    Parameters:
+    rgb_batch (tf.Tensor): A batch of RGB images with shape (batch_size, height, width, channels).
+    hsi_batch (tf.Tensor): A batch of HSI images with shape (batch_size, height, width, channels).
+    Returns:
+    tuple: A tuple containing two tf.Tensors:
+        - augmented_rgb_batch: The augmented batch of RGB images.
+        - augmented_hsi_batch: The augmented batch of HSI images.
+    """
     data_gen = tf.keras.preprocessing.image.ImageDataGenerator(
         rotation_range=20,
         width_shift_range=0.2,
@@ -344,6 +434,19 @@ def apply_paired_augmentation(rgb_batch, hsi_batch):
 
 
 def extract_bands(input_dir: str, output_dir: str):
+    """
+    Extracts bands from .mat files in the input directory and saves them as TIFF files in the output directory.
+    This function processes each .mat file in the specified input directory, extracts the 'cube' data, and saves each band
+    of the 'cube' as a separate TIFF file in a corresponding folder within the output directory.
+    Args:
+        input_dir (str): The directory containing the .mat files to be processed.
+        output_dir (str): The directory where the extracted TIFF files will be saved.
+    Raises:
+        FileNotFoundError: If the input directory does not exist.
+        KeyError: If the 'cube' key is not found in a .mat file.
+    Example:
+        extract_bands('/path/to/input_dir', '/path/to/output_dir')
+    """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
     mat_files = [f for f in os.listdir(input_dir) if f.endswith('.mat')]
@@ -375,25 +478,3 @@ def extract_bands(input_dir: str, output_dir: str):
                 f"Extracted {cube_data.shape[2]} bands from {mat_file} and saved as TIFF in {mat_output_folder}.")
         else:
             print(f"'cube' key not found in {mat_file}.")
-
-def npy_to_png(directory_path, output_directory, mode='rgb'):
-    os.makedirs(output_directory, exist_ok=True)
-    for filename in os.listdir(directory_path):
-        if filename.endswith('.npy'):
-            npy_path = os.path.join(directory_path, filename)
-            png_filename = os.path.splitext(filename)[0] + '.png'
-            png_path = os.path.join(output_directory, png_filename)
-            data = np.load(npy_path)
-            if mode == 'rgb':
-                rgb_data = data[:, :, [0, 15, 30]]
-                rgb_data = (rgb_data - rgb_data.min()) / (rgb_data.max() - rgb_data.min()) * 255
-                image_data = rgb_data.astype(np.uint8)
-            elif mode == 'grayscale':
-                grayscale_data = np.mean(data, axis=2)
-                grayscale_data = (grayscale_data - grayscale_data.min()) / (grayscale_data.max() - grayscale_data.min()) * 255
-                image_data = grayscale_data.astype(np.uint8)
-            else:
-                raise ValueError("Invalid mode. Choose 'rgb' or 'grayscale'.")
-            image = Image.fromarray(image_data)
-            image.save(png_path)
-            print(f"Saved {png_path}")
