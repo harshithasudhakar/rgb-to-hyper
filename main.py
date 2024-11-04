@@ -1,4 +1,5 @@
-# Generates 31 .tiffs for each HSI (each .tiff corresponds to each channel in HSI)
+# HSI gen - new
+
 import os
 import numpy as np
 import config
