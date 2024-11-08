@@ -5,10 +5,11 @@ import numpy as np
 import config
 import tensorflow as tf
 import imageio
-from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH,HSI_IMAGE_PATH
+from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH, HSI_IMAGE_PATH
 from model import Generator, Discriminator
 from loss import peak_signal_to_noise_ratio, spectral_angle_mapper, generator_loss, mean_squared_error, discriminator_loss
 from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation
+
 
 def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
               discriminator: Discriminator, target_size=(IMG_WIDTH, IMG_HEIGHT),
@@ -26,7 +27,8 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
 
     # Set up checkpointing based on mode
     if mode == "global":
-        checkpoint = tf.train.Checkpoint(generator=generator, discriminator=discriminator)
+        checkpoint = tf.train.Checkpoint(
+            generator=generator, discriminator=discriminator)
         checkpoint.restore(tf.train.latest_checkpoint('./checkpoints/'))
     else:
         checkpoint = tf.train.Checkpoint(
@@ -86,25 +88,47 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
             # Save generated HSI images
             for j in range(generated_hsi.shape[0]):
                 # Convert tensor to numpy array and clip values if necessary
-                generated_hsi_np = tf.clip_by_value(generated_hsi[j], 0, 1).numpy()
-                
+                generated_hsi_np = tf.clip_by_value(
+                    generated_hsi[j], 0, 1).numpy()
+
                 # Normalize and ensure the data is in the correct format
                 # Depending on your specific needs, you may want to apply different transformations.
-                generated_hsi_np = np.moveaxis(generated_hsi_np, -1, 0)  # Move channels to first dimension
-                
+                # Move channels to first dimension
+                generated_hsi_np = np.moveaxis(generated_hsi_np, -1, 0)
+
                 # Ensure that the image is in a valid shape (C, H, W) for saving
                 if generated_hsi_np.ndim == 3 and generated_hsi_np.shape[0] > 3:
                     # Save as a multi-page TIFF file if there are more than 3 channels
-                    image_path = os.path.join(generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.tiff')
-                    imageio.mimwrite(image_path, generated_hsi_np.astype(np.float32), format='tiff')
+                    image_path = os.path.join(
+                        generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.tiff')
+                    imageio.mimwrite(image_path, generated_hsi_np.astype(
+                        np.float32), format='tiff')
                 else:
                     # Otherwise, save as normal RGB or grayscale
-                    image_path = os.path.join(generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.png')
-                    imageio.imwrite(image_path, (generated_hsi_np * 255).astype(np.uint8))  # Scale to 0-255 if saving as PNG
+                    image_path = os.path.join(
+                        generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.png')
+                    # Scale to 0-255 if saving as PNG
+                    imageio.imwrite(
+                        image_path, (generated_hsi_np * 255).astype(np.uint8))
 
             # Prepare discriminator inputs
-            combined_real = tf.concat([augmented_hsi_batch, augmented_rgb_batch], axis=-1)
-            combined_fake = tf.concat([generated_hsi, augmented_rgb_batch], axis=-1)
+            combined_real = tf.concat(
+                [augmented_hsi_batch, augmented_rgb_batch], axis=-1)
+            combined_fake = tf.concat(
+                [generated_hsi, augmented_rgb_batch], axis=-1)
+
+            # Train discriminator
+            with tf.GradientTape() as gen_tape:
+                generated_hsi = generator(augmented_rgb_batch)
+                combined_fake = tf.concat(
+                    [generated_hsi, augmented_rgb_batch], axis=-1)
+                gen_loss = generator_loss(discriminator(
+                    combined_fake), generated_hsi, augmented_hsi_batch)
+
+            gradients_of_generator = gen_tape.gradient(
+                gen_loss, generator.trainable_variables)
+            generator_optimizer.apply_gradients(
+                zip(gradients_of_generator, generator.trainable_variables))
 
             # Train discriminator
             with tf.GradientTape() as disc_tape:
@@ -112,21 +136,15 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 disc_fake = discriminator(combined_fake)
                 disc_loss = discriminator_loss(disc_real, disc_fake)
 
-            gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
-            discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
-
-            # Train generator
-            with tf.GradientTape() as gen_tape:
-                generated_hsi = generator(augmented_rgb_batch)
-                combined_fake = tf.concat([generated_hsi, augmented_rgb_batch], axis=-1)
-                gen_loss = generator_loss(discriminator(combined_fake), generated_hsi, augmented_hsi_batch)
-
-            gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
-            generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
+            gradients_of_discriminator = disc_tape.gradient(
+                disc_loss, discriminator.trainable_variables)
+            discriminator_optimizer.apply_gradients(
+                zip(gradients_of_discriminator, discriminator.trainable_variables))
 
             # Calculate metrics
             mse = mean_squared_error(augmented_hsi_batch, generated_hsi)
-            psnr = peak_signal_to_noise_ratio(augmented_hsi_batch, generated_hsi)
+            psnr = peak_signal_to_noise_ratio(
+                augmented_hsi_batch, generated_hsi)
             sam = spectral_angle_mapper(augmented_hsi_batch, generated_hsi)
 
             # Store metrics for the final epoch
@@ -151,7 +169,8 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
 
         # Save metrics after the final epoch
         if epoch == config.EPOCHS - 1:
-            metrics_file = os.path.join(metrics_dir, f'final_metrics_{mode}.txt')
+            metrics_file = os.path.join(
+                metrics_dir, f'final_metrics_{mode}.txt')
             with open(metrics_file, 'w') as f:
                 f.write(f"Training Mode: {mode}\n")
                 f.write(f"Number of Batches: {len(final_metrics['mse'])}\n\n")
@@ -168,14 +187,17 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 f.write(
                     f"Spectral Angle Mapper: {sum(final_metrics['sam']) / len(final_metrics['sam']):.4f}\n")
 
+
 # Train the GAN
 if __name__ == "__main__":
     mode = "global"
     generator = Generator()
     discriminator = Discriminator()
 
-    generator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE, beta_1=config.BETA_1)
-    discriminator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE, beta_1=config.BETA_1)
+    generator_optimizer = tf.keras.optimizers.Adam(
+        config.LEARNING_RATE, beta_1=config.BETA_1)
+    discriminator_optimizer = tf.keras.optimizers.Adam(
+        config.LEARNING_RATE, beta_1=config.BETA_1)
 
     # Logging and Checkpointing
     log_dir = config.LOG_DIR
