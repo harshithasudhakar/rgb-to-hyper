@@ -1,46 +1,19 @@
+# Generates 31 .tiffs for each HSI (each .tiff corresponds to each channel in HSI)
 import os
 import numpy as np
+import config
 import tensorflow as tf
 import imageio
-import config
-from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH, HSI_IMAGE_PATH
+from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH,HSI_IMAGE_PATH
 from model import Generator, Discriminator
 from loss import peak_signal_to_noise_ratio, spectral_angle_mapper, generator_loss, mean_squared_error, discriminator_loss
-from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation
-
-
-class GANLearningRateScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, initial_learning_rate, decay_steps, warmup_steps, min_lr_ratio=0.1):
-        super(GANLearningRateScheduler, self).__init__()
-        self.initial_learning_rate = initial_learning_rate
-        self.decay_steps = decay_steps
-        self.warmup_steps = warmup_steps
-        self.min_lr = initial_learning_rate * min_lr_ratio
-
-    def __call__(self, step):
-        step = tf.cast(step, tf.float32)
-        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
-        decay_steps = tf.cast(self.decay_steps, tf.float32)
-
-        # Warmup phase
-        warmup_progress = tf.minimum(1.0, step / warmup_steps)
-        warmup_lr = self.initial_learning_rate * warmup_progress
-
-        # Decay phase with cosine decay
-        decay_progress = tf.maximum(
-            0.0, step - warmup_steps) / (decay_steps - warmup_steps)
-        decay_factor = 0.5 * \
-            (1.0 + tf.cos(tf.minimum(1.0, decay_progress) * np.pi))
-        decay_lr = self.min_lr + \
-            (self.initial_learning_rate - self.min_lr) * decay_factor
-
-        return tf.where(step < warmup_steps, warmup_lr, decay_lr)
-
+from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation, clear_session
 
 def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
-              discriminator: Discriminator, generator_optimizer,
-              discriminator_optimizer, summary_writer,
-              target_size=(IMG_WIDTH, IMG_HEIGHT), mode="global"):
+              discriminator: Discriminator, target_size=(IMG_WIDTH, IMG_HEIGHT),
+              mode="global"):
+    # Clear the TensorFlow session
+    clear_session()
     """
     Train GAN with properly paired RGB and HSI images, using synchronized augmentation.
     """
@@ -54,12 +27,7 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
 
     # Set up checkpointing based on mode
     if mode == "global":
-        checkpoint = tf.train.Checkpoint(
-            generator=generator,
-            discriminator=discriminator,
-            generator_optimizer=generator_optimizer,
-            discriminator_optimizer=discriminator_optimizer
-        )
+        checkpoint = tf.train.Checkpoint(generator=generator, discriminator=discriminator)
         checkpoint.restore(tf.train.latest_checkpoint('./checkpoints/'))
     else:
         checkpoint = tf.train.Checkpoint(
@@ -92,7 +60,6 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
     }
 
     # Training loop
-    steps = 0
     for epoch in range(config.EPOCHS):
         print(f"\nEpoch {epoch+1}/{config.EPOCHS}")
 
@@ -110,81 +77,58 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 continue
 
             # Generator forward pass
-            with tf.GradientTape() as gen_tape:
-                generated_hsi = generator(augmented_rgb_batch)
-                combined_fake = tf.concat(
-                    [generated_hsi, augmented_rgb_batch], axis=-1)
-                gen_loss = generator_loss(discriminator(combined_fake),
-                                          generated_hsi, augmented_hsi_batch)
+            generated_hsi = generator(augmented_rgb_batch)
 
-            # Train generator
-            gradients_of_generator = gen_tape.gradient(
-                gen_loss, generator.trainable_variables)
-            generator_optimizer.apply_gradients(
-                zip(gradients_of_generator, generator.trainable_variables))
+            # Visualize current results
+            visualize_generated_images(
+                augmented_rgb_batch, generated_hsi, augmented_hsi_batch,
+                epoch, i // config.BATCH_SIZE)
+
+            # Save generated HSI images
+            for j in range(generated_hsi.shape[0]):
+                # Convert tensor to numpy array and clip values if necessary
+                generated_hsi_np = tf.clip_by_value(generated_hsi[j], 0, 1).numpy()
+                
+                # Normalize and ensure the data is in the correct format
+                # Depending on your specific needs, you may want to apply different transformations.
+                generated_hsi_np = np.moveaxis(generated_hsi_np, -1, 0)  # Move channels to first dimension
+                
+                # Ensure that the image is in a valid shape (C, H, W) for saving
+                if generated_hsi_np.ndim == 3 and generated_hsi_np.shape[0] > 3:
+                    # Save as a multi-page TIFF file if there are more than 3 channels
+                    image_path = os.path.join(generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.tiff')
+                    imageio.mimwrite(image_path, generated_hsi_np.astype(np.float32), format='tiff')
+                else:
+                    # Otherwise, save as normal RGB or grayscale
+                    image_path = os.path.join(generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.png')
+                    imageio.imwrite(image_path, (generated_hsi_np * 255).astype(np.uint8))  # Scale to 0-255 if saving as PNG
 
             # Prepare discriminator inputs
-            combined_real = tf.concat(
-                [augmented_hsi_batch, augmented_rgb_batch], axis=-1)
+            combined_real = tf.concat([augmented_hsi_batch, augmented_rgb_batch], axis=-1)
+            combined_fake = tf.concat([generated_hsi, augmented_rgb_batch], axis=-1)
 
             # Train discriminator
             with tf.GradientTape() as disc_tape:
                 disc_real = discriminator(combined_real)
                 disc_fake = discriminator(combined_fake)
-                disc_loss = discriminator_loss(disc_real, disc_fake)
+                disc_loss = discriminator_loss(disc_real, disc_fake, combined_real, combined_fake, discriminator)  # Pass the missing arguments
 
-            gradients_of_discriminator = disc_tape.gradient(
-                disc_loss, discriminator.trainable_variables)
-            discriminator_optimizer.apply_gradients(
-                zip(gradients_of_discriminator, discriminator.trainable_variables))
+            gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
+            discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
+
+            # Train generator
+            with tf.GradientTape() as gen_tape:
+                generated_hsi = generator(augmented_rgb_batch)
+                combined_fake = tf.concat([generated_hsi, augmented_rgb_batch], axis=-1)
+                gen_loss = generator_loss(discriminator(combined_fake), generated_hsi, augmented_hsi_batch, lambda_pixel=20, lambda_perceptual=0.5)  # Adjust loss weights
+
+            gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
+            generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
 
             # Calculate metrics
             mse = mean_squared_error(augmented_hsi_batch, generated_hsi)
-            psnr = peak_signal_to_noise_ratio(
-                augmented_hsi_batch, generated_hsi)
+            psnr = peak_signal_to_noise_ratio(augmented_hsi_batch, generated_hsi)
             sam = spectral_angle_mapper(augmented_hsi_batch, generated_hsi)
-
-            # Log learning rates
-            with summary_writer.as_default():
-                gen_lr = generator_optimizer.learning_rate(steps)
-                disc_lr = discriminator_optimizer.learning_rate(steps)
-                tf.summary.scalar('generator_lr', gen_lr, step=steps)
-                tf.summary.scalar('discriminator_lr', disc_lr, step=steps)
-                tf.summary.scalar('generator_loss', gen_loss, step=steps)
-                tf.summary.scalar('discriminator_loss', disc_loss, step=steps)
-                tf.summary.scalar('mse', mse, step=steps)
-                tf.summary.scalar('psnr', psnr, step=steps)
-                tf.summary.scalar('sam', sam, step=steps)
-
-            # Print progress every 10 steps
-            if steps % 10 == 0:
-                print(f'Epoch: {epoch}, Step: {steps}, '
-                      f'Gen LR: {gen_lr.numpy():.6f}, '
-                      f'Disc LR: {disc_lr.numpy():.6f}, '
-                      f'Gen Loss: {gen_loss.numpy():.4f}, '
-                      f'Disc Loss: {disc_loss.numpy():.4f}, '
-                      f'PSNR: {psnr.numpy():.4f}')
-
-            # Save generated images
-            if steps % 100 == 0:
-                # Save logic here (keeping your existing save logic)
-                for j in range(generated_hsi.shape[0]):
-                    generated_hsi_np = tf.clip_by_value(
-                        generated_hsi[j], 0, 1).numpy()
-                    generated_hsi_np = np.moveaxis(generated_hsi_np, -1, 0)
-
-                    if generated_hsi_np.ndim == 3 and generated_hsi_np.shape[0] > 3:
-                        image_path = os.path.join(
-                            generated_hsi_dir,
-                            f'generated_hsi_epoch{epoch+1}_step{steps}_img{j}.tiff')
-                        imageio.mimwrite(image_path, generated_hsi_np.astype(
-                            np.float32), format='tiff')
-                    else:
-                        image_path = os.path.join(
-                            generated_hsi_dir,
-                            f'generated_hsi_epoch{epoch+1}_step{steps}_img{j}.png')
-                        imageio.imwrite(
-                            image_path, (generated_hsi_np * 255).astype(np.uint8))
 
             # Store metrics for the final epoch
             if epoch == config.EPOCHS - 1:
@@ -194,80 +138,98 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 final_metrics['psnr'].append(psnr.numpy())
                 final_metrics['sam'].append(sam.numpy())
 
-            steps += 1
+            # Print progress
+            batch_idx = i // config.BATCH_SIZE
+            print(f'Epoch: {epoch}, Batch: {batch_idx}, '
+                  f'Disc Loss: {disc_loss.numpy():.4f}, '
+                  f'Gen Loss: {gen_loss.numpy():.4f}, '
+                  f'MSE: {mse.numpy():.4f}, '
+                  f'PSNR: {psnr.numpy():.4f}, '
+                  f'SAM: {sam.numpy():.4f}')
 
         # Save checkpoint at end of epoch
         checkpoint.save(file_prefix=checkpoint_path)
 
-        # Save final metrics
+        # Save metrics after the final epoch
         if epoch == config.EPOCHS - 1:
-            save_final_metrics(final_metrics, metrics_dir, mode)
+            metrics_file = os.path.join(metrics_dir, f'final_metrics_{mode}.txt')
+            with open(metrics_file, 'w') as f:
+                f.write(f"Training Mode: {mode}\n")
+                f.write(f"Number of Batches: {len(final_metrics['mse'])}\n\n")
+                f.write("Final Epoch Metrics (Average across all batches):\n")
+                f.write("-" * 50 + "\n")
+                f.write(
+                    f"Discriminator Loss: {sum(final_metrics['discriminator_loss']) / len(final_metrics['discriminator_loss']):.4f}\n")
+                f.write(
+                    f"Generator Loss: {sum(final_metrics['generator_loss']) / len(final_metrics['generator_loss']):.4f}\n")
+                f.write(
+                    f"Mean Squared Error: {sum(final_metrics['mse']) / len(final_metrics['mse']):.4f}\n")
+                f.write(
+                    f"Peak Signal-to-Noise Ratio: {sum(final_metrics['psnr']) / len(final_metrics['psnr']):.4f}\n")
+                f.write(
+                    f"Spectral Angle Mapper: {sum(final_metrics['sam']) / len(final_metrics['sam'])::.4f}\n")
 
+def load_model_and_predict(rgb_path: str, hsi_path: str, checkpoint_path: str):
+    """
+    Load the pre-trained model and use it to make predictions on new data.
+    
+    Args:
+        rgb_path (str): Path to RGB images directory.
+        hsi_path (str): Path to HSI images directory.
+        checkpoint_path (str): Path to the checkpoint directory containing the saved model weights.
+    
+    Returns:
+        None
+    """
+    # Load the generator model
+    generator = Generator()
+    checkpoint = tf.train.Checkpoint(generator=generator)
+    checkpoint.restore(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
 
-def save_final_metrics(metrics, metrics_dir, mode):
-    metrics_file = os.path.join(metrics_dir, f'final_metrics_{mode}.txt')
-    with open(metrics_file, 'w') as f:
-        f.write(f"Training Mode: {mode}\n")
-        f.write(f"Number of Batches: {len(metrics['mse'])}\n\n")
-        f.write("Final Epoch Metrics (Average across all batches):\n")
-        f.write("-" * 50 + "\n")
-        for key in metrics:
-            avg_value = sum(metrics[key]) / len(metrics[key])
-            f.write(f"{key}: {avg_value:.4f}\n")
+    # Load paired images
+    rgb_images, hsi_images = load_paired_images(rgb_path, hsi_path)
 
+    # Convert to tensors
+    rgb_images = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
+    hsi_images = tf.convert_to_tensor(hsi_images, dtype=tf.float32)
 
+    # Make predictions
+    generated_hsi = generator(rgb_images, training=False)
+
+    # Visualize the results
+    visualize_generated_images(rgb_images, generated_hsi, hsi_images, epoch=0, batch=0)
+
+    # Save generated HSI images
+    generated_hsi_dir = r'C:\Harshi\ECS-II\Dataset\gen_hsi'
+    os.makedirs(generated_hsi_dir, exist_ok=True)
+    for j in range(generated_hsi.shape[0]):
+        generated_hsi_np = tf.clip_by_value(generated_hsi[j], 0, 1).numpy()
+        generated_hsi_np = np.moveaxis(generated_hsi_np, -1, 0)
+        image_path = os.path.join(generated_hsi_dir, f'generated_hsi_img{j}.tiff')
+        imageio.mimwrite(image_path, generated_hsi_np.astype(np.float32), format='tiff')
+
+# Train the GAN
 if __name__ == "__main__":
     mode = "global"
-    generator = Generator()
-    discriminator = Discriminator()
-
-    # Calculate total steps for scheduler
-    # You'll need to add dataset size to your config
-    steps_per_epoch = config.DATASET_SIZE // config.BATCH_SIZE
-    total_steps = config.EPOCHS * steps_per_epoch
-
-    # Setup schedulers
-    gen_scheduler = GANLearningRateScheduler(
-        initial_learning_rate=config.LEARNING_RATE,
-        decay_steps=total_steps,
-        warmup_steps=total_steps // 20,  # 5% of total steps for warmup
-        min_lr_ratio=0.1
-    )
-
-    disc_scheduler = GANLearningRateScheduler(
-        initial_learning_rate=config.LEARNING_RATE,
-        decay_steps=total_steps,
-        warmup_steps=total_steps // 20,
-        min_lr_ratio=0.05
-    )
-
-    # Create optimizers with schedulers
-    generator_optimizer = tf.keras.optimizers.Adam(
-        learning_rate=gen_scheduler,
-        beta_1=config.BETA_1
-    )
-    discriminator_optimizer = tf.keras.optimizers.Adam(
-        learning_rate=disc_scheduler,
-        beta_1=config.BETA_1
-    )
-
-    # Logging and Checkpointing
-    log_dir = config.LOG_DIR
-    summary_writer = tf.summary.create_file_writer(log_dir)
-
-    # To save model checkpoints
-    if mode == "global":
-        checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'ckpt')
+    if mode == "predict":
+        load_model_and_predict(rgb_path=RGB_IMAGE_PATH, hsi_path=HSI_IMAGE_PATH, checkpoint_path=config.CHECKPOINT_DIR)
     else:
-        checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'local_ckpt')
+        generator = Generator()
+        discriminator = Discriminator()
 
-    train_gan(
-        rgb_path=RGB_IMAGE_PATH,
-        hsi_path=HSI_IMAGE_PATH,
-        generator=generator,
-        discriminator=discriminator,
-        generator_optimizer=generator_optimizer,
-        discriminator_optimizer=discriminator_optimizer,
-        summary_writer=summary_writer,
-        mode=mode
-    )
+        generator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE * 0.5, beta_1=config.BETA_1)
+        discriminator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE * 0.5, beta_1=config.BETA_1)
+
+        # Logging and Checkpointing
+        log_dir = config.LOG_DIR
+        summary_writer = tf.summary.create_file_writer(log_dir)
+
+        # To save model checkpoints
+        if mode == "global":
+            checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'ckpt')
+        else:
+            checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'local_ckpt')
+
+        train_gan(rgb_path=RGB_IMAGE_PATH, hsi_path=HSI_IMAGE_PATH,
+                  generator=generator, discriminator=discriminator,
+                  mode=mode)
