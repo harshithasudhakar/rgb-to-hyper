@@ -131,6 +131,16 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
             gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
             generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
 
+            # Log weight norms for Generator
+            for var in generator.trainable_variables:
+                var_norm = tf.norm(var).numpy()
+                logging.info(f"Generator {var.name} norm: {var_norm:.4f}")
+
+            # Log weight norms for Discriminator
+            for var in discriminator.trainable_variables:
+                var_norm = tf.norm(var).numpy()
+                logging.info(f"Discriminator {var.name} norm: {var_norm:.4f}")
+
             # Calculate metrics
             mse = mean_squared_error(augmented_hsi_batch, generated_hsi)
             psnr = peak_signal_to_noise_ratio(augmented_hsi_batch, generated_hsi)
