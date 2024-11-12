@@ -253,7 +253,7 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
 if __name__ == "__main__":
     mode = "global"
     if mode == "predict":
-        load_model_and_predict(rgb_path=RGB_IMAGE_PATH, hsi_path=HSI_IMAGE_PATH, checkpoint_path=config.CHECKPOINT_DIR)
+        load_model_and_predict(rgb_path=RGB_IMAGE_PATH, checkpoint_path=config.CHECKPOINT_DIR)
     else:
         generator = Generator()
         discriminator = Discriminator()
@@ -267,10 +267,13 @@ if __name__ == "__main__":
 
         # To save model checkpoints
         if mode == "global":
-            checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'ckpt')
+            checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'global_ckpt')
         else:
             checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'local_ckpt')
 
         train_gan(rgb_path=RGB_IMAGE_PATH, hsi_path=HSI_IMAGE_PATH,
                   generator=generator, discriminator=discriminator,
-                  mode=mode)
+                  generator_optimizer=generator_optimizer, 
+                  discriminator_optimizer=discriminator_optimizer,
+                  mode=mode,
+                  checkpoint_path=checkpoint_path)
