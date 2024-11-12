@@ -4,10 +4,16 @@ import numpy as np
 import config
 import tensorflow as tf
 import imageio
+import logging
+import tifffile
 from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH,HSI_IMAGE_PATH
 from model import Generator, Discriminator
 from loss import peak_signal_to_noise_ratio, spectral_angle_mapper, generator_loss, mean_squared_error, discriminator_loss
-from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation, clear_session
+from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation, clear_session, load_rgb_images
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
               discriminator: Discriminator, target_size=(IMG_WIDTH, IMG_HEIGHT),
@@ -169,44 +175,79 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 f.write(
                     f"Spectral Angle Mapper: {sum(final_metrics['sam']) / len(final_metrics['sam'])::.4f}\n")
 
-def load_model_and_predict(rgb_path: str, hsi_path: str, checkpoint_path: str):
+
+def load_model_and_predict(rgb_path: str, checkpoint_path: str):
     """
     Load the pre-trained model and use it to make predictions on new data.
     
     Args:
         rgb_path (str): Path to RGB images directory.
-        hsi_path (str): Path to HSI images directory.
         checkpoint_path (str): Path to the checkpoint directory containing the saved model weights.
     
     Returns:
         None
     """
+    # Load RGB images and filenames
+    rgb_images, filenames = load_rgb_images(rgb_path)
+    
+    # Check if any images were loaded by verifying the filenames list
+    if not filenames:
+        logging.error("No valid RGB images to process.")
+        return
+    
+    # Convert RGB images to tensor
+    rgb_tensor = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
+    
     # Load the generator model
     generator = Generator()
     checkpoint = tf.train.Checkpoint(generator=generator)
-    checkpoint.restore(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
-
-    # Load paired images
-    rgb_images, hsi_images = load_paired_images(rgb_path, hsi_path)
-
-    # Convert to tensors
-    rgb_images = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
-    hsi_images = tf.convert_to_tensor(hsi_images, dtype=tf.float32)
+    latest_ckpt = tf.train.latest_checkpoint(checkpoint_path)
+    if latest_ckpt:
+        checkpoint.restore(latest_ckpt).expect_partial()
+        logging.info(f"Model restored from checkpoint: {latest_ckpt}")
+    else:
+        logging.error("No checkpoint found. Please check the checkpoint path.")
+        return
 
     # Make predictions
-    generated_hsi = generator(rgb_images, training=False)
-
-    # Visualize the results
-    visualize_generated_images(rgb_images, generated_hsi, hsi_images, epoch=0, batch=0)
-
-    # Save generated HSI images
+    generated_hsi = generator(rgb_tensor, training=False)
+    
+    # Ensure generated_hsi has the expected number of channels
+    expected_channels = 31
+    actual_channels = generated_hsi.shape[-1]
+    if actual_channels != expected_channels:
+        logging.warning(f"Generated HSI has {actual_channels} channels instead of {expected_channels}.")
+    
+    # Define the directory to save generated HSI TIFF files
     generated_hsi_dir = r'C:\Harshi\ECS-II\Dataset\gen_hsi'
     os.makedirs(generated_hsi_dir, exist_ok=True)
+    
+    # Iterate through each generated HSI image and save as TIFF
     for j in range(generated_hsi.shape[0]):
-        generated_hsi_np = tf.clip_by_value(generated_hsi[j], 0, 1).numpy()
-        generated_hsi_np = np.moveaxis(generated_hsi_np, -1, 0)
-        image_path = os.path.join(generated_hsi_dir, f'generated_hsi_img{j}.tiff')
-        imageio.mimwrite(image_path, generated_hsi_np.astype(np.float32), format='tiff')
+        try:
+            # Clip values to [0, 1] and convert to float32
+            hsi_image = tf.clip_by_value(generated_hsi[j], 0, 1).numpy().astype(np.float32)
+            
+            # Rearrange axes if necessary (assuming generator outputs (channels, height, width))
+            if hsi_image.shape[0] == expected_channels:
+                hsi_image = np.moveaxis(hsi_image, 0, -1)  # Convert to (height, width, channels)
+            elif hsi_image.shape[-1] != expected_channels:
+                logging.warning(f"Image {filenames[j]} has unexpected shape {hsi_image.shape}. Skipping.")
+                continue
+            
+            # Define the output file path
+            base_filename = os.path.splitext(filenames[j])[0]
+            output_path = os.path.join(generated_hsi_dir, f"{base_filename}_hsi.tiff")
+            
+            # Save the HSI image as a TIFF file
+            tifffile.imwrite(output_path, hsi_image)
+            logging.info(f"Saved HSI image: {output_path}")
+        
+        except Exception as e:
+            logging.error(f"Failed to save HSI image for {filenames[j]}: {str(e)}")
+            continue
+    
+    logging.info("HSI generation and saving completed.")
 
 # Train the GAN
 if __name__ == "__main__":
