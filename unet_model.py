@@ -12,10 +12,10 @@ from sklearn.metrics import confusion_matrix, classification_report
 IMG_HEIGHT, IMG_WIDTH = 256, 256
 N_CLASSES = 3
 BATCH_SIZE = 16
-EPOCHS = 50
-IMG_PATH = './data/unet/images'  # Path to your images
-MASK_PATH = './data/unet/masks'    # Path to your masks
-ZIP_PATH = './data/zips/dataverse.zip'
+EPOCHS = 5
+IMG_PATH = 'data\\unet\\images'  # Path to your images
+MASK_PATH = 'data\\unet\\masks'    # Path to your masks
+ZIP_PATH = 'data\\zips\\dataverse.zip'
 MODEL_PATH = 'unet_microplastics.h5'
 
 
@@ -69,57 +69,44 @@ def load_data(image_dir, mask_dir):
     return np.array(images), np.array(masks)
 
 # Create U-Net model
-
-
-def unet_model(input_size=(IMG_HEIGHT, IMG_WIDTH, 3)):
+def unet_model(input_size=(IMG_HEIGHT, IMG_WIDTH, 3), n_classes=N_CLASSES):
     inputs = layers.Input(input_size)
 
-    # Encoder
-    conv1 = layers.Conv2D(64, 3, activation='relu', padding='same')(inputs)
-    conv1 = layers.Conv2D(64, 3, activation='relu', padding='same')(conv1)
+    # Encoder with reduced filters
+    conv1 = layers.Conv2D(32, 3, activation='relu', padding='same')(inputs)
     pool1 = layers.MaxPooling2D(pool_size=(2, 2))(conv1)
 
-    conv2 = layers.Conv2D(128, 3, activation='relu', padding='same')(pool1)
-    conv2 = layers.Conv2D(128, 3, activation='relu', padding='same')(conv2)
+    conv2 = layers.Conv2D(64, 3, activation='relu', padding='same')(pool1)
     pool2 = layers.MaxPooling2D(pool_size=(2, 2))(conv2)
 
-    conv3 = layers.Conv2D(256, 3, activation='relu', padding='same')(pool2)
-    conv3 = layers.Conv2D(256, 3, activation='relu', padding='same')(conv3)
+    conv3 = layers.Conv2D(128, 3, activation='relu', padding='same')(pool2)
     pool3 = layers.MaxPooling2D(pool_size=(2, 2))(conv3)
 
-    # Bottleneck
-    conv4 = layers.Conv2D(512, 3, activation='relu', padding='same')(pool3)
-    conv4 = layers.Conv2D(512, 3, activation='relu', padding='same')(conv4)
+    # Bottleneck with fewer filters
+    conv4 = layers.Conv2D(256, 3, activation='relu', padding='same')(pool3)
 
-    # Decoder
-    up5 = layers.Conv2DTranspose(
-        256, (2, 2), strides=(2, 2), padding='same')(conv4)
+    # Decoder with reduced filters
+    up5 = layers.Conv2DTranspose(128, (2, 2), strides=(2, 2), padding='same')(conv4)
     merge5 = layers.concatenate([up5, conv3])
-    conv5 = layers.Conv2D(256, 3, activation='relu', padding='same')(merge5)
-    conv5 = layers.Conv2D(256, 3, activation='relu', padding='same')(conv5)
+    conv5 = layers.Conv2D(128, 3, activation='relu', padding='same')(merge5)
 
-    up6 = layers.Conv2DTranspose(
-        128, (2, 2), strides=(2, 2), padding='same')(conv5)
+    up6 = layers.Conv2DTranspose(64, (2, 2), strides=(2, 2), padding='same')(conv5)
     merge6 = layers.concatenate([up6, conv2])
-    conv6 = layers.Conv2D(128, 3, activation='relu', padding='same')(merge6)
-    conv6 = layers.Conv2D(128, 3, activation='relu', padding='same')(conv6)
+    conv6 = layers.Conv2D(64, 3, activation='relu', padding='same')(merge6)
 
-    up7 = layers.Conv2DTranspose(
-        64, (2, 2), strides=(2, 2), padding='same')(conv6)
+    up7 = layers.Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same')(conv6)
     merge7 = layers.concatenate([up7, conv1])
-    conv7 = layers.Conv2D(64, 3, activation='relu', padding='same')(merge7)
-    conv7 = layers.Conv2D(64, 3, activation='relu', padding='same')(conv7)
+    conv7 = layers.Conv2D(32, 3, activation='relu', padding='same')(merge7)
 
-    outputs = layers.Conv2D(N_CLASSES, 1, activation='softmax')(conv7)
+    # Final layer with the number of classes
+    outputs = layers.Conv2D(n_classes, 1, activation='softmax')(conv7)
 
     model = models.Model(inputs=[inputs], outputs=[outputs])
-    model.compile(optimizer='adam',
-                  loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    
     return model
 
 # Data Augmentation
-
-
 def augment_data(images, masks):
     datagen = ImageDataGenerator(rotation_range=10, width_shift_range=0.1,
                                  height_shift_range=0.1, shear_range=0.1,
