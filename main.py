@@ -16,8 +16,44 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
-              discriminator: Discriminator, target_size=(IMG_WIDTH, IMG_HEIGHT),
-              mode="global"):
+              discriminator: Discriminator, 
+              generator_optimizer, discriminator_optimizer, checkpoint_path: str,
+              target_size=(IMG_WIDTH, IMG_HEIGHT),
+              mode: str = "global"):
+    """
+    Trains the GAN model with the provided parameters.
+
+    Args:
+        rgb_path (str): Path to RGB images.
+        hsi_path (str): Path to HSI images.
+        generator (tf.keras.Model): The generator model.
+        discriminator (tf.keras.Model): The discriminator model.
+        generator_optimizer (tf.keras.optimizers.Optimizer): Optimizer for the generator.
+        discriminator_optimizer (tf.keras.optimizers.Optimizer): Optimizer for the discriminator.
+        mode (str): Training mode ('global' or 'local').
+        checkpoint_path (str): Path to save/load checkpoints.
+    """
+    # Set up checkpointing
+    checkpoint = tf.train.Checkpoint(
+        generator=generator,
+        discriminator=discriminator,
+        generator_optimizer=generator_optimizer,
+        discriminator_optimizer=discriminator_optimizer
+    )
+    
+    checkpoint_manager = tf.train.CheckpointManager(
+        checkpoint,
+        directory=checkpoint_path,
+        max_to_keep=5
+    )
+    
+    # Restore from the latest checkpoint if it exists
+    if checkpoint_manager.latest_checkpoint:
+        checkpoint.restore(checkpoint_manager.latest_checkpoint)
+        logging.info(f"Restored from {checkpoint_manager.latest_checkpoint}")
+    else:
+        logging.info("Initializing from scratch.")
+
     # Clear the TensorFlow session
     clear_session()
     """
