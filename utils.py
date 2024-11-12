@@ -142,20 +142,22 @@ def check_normalization(hsi_images: dict):
         print(f"{fname}: Min = {min_val}, Max = {max_val}")
 
 
-def load_rgb_images(rgb_path: str, target_size=(IMG_WIDTH, IMG_HEIGHT)):
+def load_rgb_images(rgb_path, target_size=(256, 256)):
     """
-    Load RGB images in sorted order.
-
+    Load RGB images from the specified directory.
+    
     Args:
-        rgb_path: Path to RGB images directory
-        target_size: (width, height) for resizing
-
+        rgb_path (str): Path to RGB images directory.
+        target_size (tuple): (width, height) for resizing.
+    
     Returns:
         Tuple of (image array, filenames)
     """
     # Get sorted filenames to ensure consistent order
-    filenames = sorted([f for f in os.listdir(rgb_path)
-                       if f.endswith('_clean.png')or (f[:-4].isdigit() and f.endswith('.png'))])
+    filenames = sorted([
+        f for f in os.listdir(rgb_path)
+        if f.endswith('_clean.png') or (f[:-4].isdigit() and f.endswith('.png'))
+    ])
 
     if not filenames:
         raise ValueError(f"No RGB images found in {rgb_path}")
@@ -166,17 +168,21 @@ def load_rgb_images(rgb_path: str, target_size=(IMG_WIDTH, IMG_HEIGHT)):
     for filename in filenames:
         try:
             img_path = os.path.join(rgb_path, filename)
-            img = tf.keras.preprocessing.image.load_img(
-                img_path, target_size=target_size)
+            img = tf.keras.preprocessing.image.load_img(img_path, target_size=target_size)
             img = tf.keras.preprocessing.image.img_to_array(img) / 255.0
+            if img.shape[:2] != target_size:
+                logging.warning(f"Image {filename} has incorrect size {img.shape[:2]}, expected {target_size}. Skipping.")
+                continue
             images.append(img)
             valid_filenames.append(filename)
         except Exception as e:
             logging.warning(f"Failed to load RGB image {filename}: {str(e)}")
             continue
 
-    return np.array(images), valid_filenames
+    if not images:
+        raise ValueError(f"No valid RGB images found in {rgb_path} after processing.")
 
+    return tf.convert_to_tensor(images, dtype=tf.float32), valid_filenames
 
 def load_paired_images(rgb_path: str, hsi_path: str):
     """
