@@ -349,14 +349,14 @@ def visualize_generated_images(rgb_batch, generated_hsi, hsi_batch, epoch, batch
         real_img_composite = real_img.mean(axis=-1)
         axes[1, i].imshow(real_img_composite, cmap='gray')
         axes[1, i].axis('off')
-        axes[1, i].set_title('Original HSI Composite')
+        axes[1, i].set_title('Original HSI')
 
         # Display Generated HSI as a composite image
         # Average intensity across all channels
         gen_img_composite = gen_img.mean(axis=-1)
         axes[2, i].imshow(gen_img_composite, cmap='gray')
         axes[2, i].axis('off')
-        axes[2, i].set_title('Generated HSI Composite')
+        axes[2, i].set_title('Generated HSI')
 
     plt.suptitle(f'Epoch {epoch}, Batch {batch}')
 
@@ -430,6 +430,7 @@ def apply_paired_augmentation(rgb_batch, hsi_batch):
     augmented_rgb_batch = tf.stack(augmented_rgb_list)
     augmented_hsi_batch = tf.stack(augmented_hsi_list)
 
+    # Uncomment the return statement to return the augmented batches
     return augmented_rgb_batch, augmented_hsi_batch
 
 
@@ -478,3 +479,10 @@ def extract_bands(input_dir: str, output_dir: str):
                 f"Extracted {cube_data.shape[2]} bands from {mat_file} and saved as TIFF in {mat_output_folder}.")
         else:
             print(f"'cube' key not found in {mat_file}.")
+
+
+def clear_session():
+    """
+    Clears the TensorFlow session to free up memory.
+    """
+    tf.keras.backend.clear_session()
