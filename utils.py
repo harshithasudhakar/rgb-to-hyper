@@ -155,7 +155,7 @@ def load_rgb_images(rgb_path: str, target_size=(IMG_WIDTH, IMG_HEIGHT)):
     """
     # Get sorted filenames to ensure consistent order
     filenames = sorted([f for f in os.listdir(rgb_path)
-                       if f.endswith('_clean.png')])
+                       if f.endswith('_clean.png')or (f[:-4].isdigit() and f.endswith('.png'))])
 
     if not filenames:
         raise ValueError(f"No RGB images found in {rgb_path}")
