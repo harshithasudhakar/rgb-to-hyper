@@ -49,13 +49,13 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
     
     # Restore from the latest checkpoint if it exists
     if checkpoint_manager.latest_checkpoint:
-        checkpoint.restore(checkpoint_manager.latest_checkpoint)
+        checkpoint.restore(checkpoint_manager.latest_checkpoint).expect_partial()
         logging.info(f"Restored from {checkpoint_manager.latest_checkpoint}")
     else:
         logging.info("Initializing from scratch.")
 
     # Clear the TensorFlow session
-    clear_session()
+    #clear_session()
     """
     Train GAN with properly paired RGB and HSI images, using synchronized augmentation.
     """
@@ -68,16 +68,36 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
     os.makedirs(generated_hsi_dir, exist_ok=True)
 
     # Set up checkpointing based on mode
-    if mode == "global":
-        checkpoint = tf.train.Checkpoint(generator=generator, discriminator=discriminator)
-        checkpoint.restore(tf.train.latest_checkpoint('./checkpoints/'))
+    checkpoint = tf.train.Checkpoint(
+        generator=generator,
+        discriminator=discriminator,
+        generator_optimizer=generator_optimizer,
+        discriminator_optimizer=discriminator_optimizer
+    )
+    checkpoint_manager = tf.train.CheckpointManager(
+        checkpoint,
+        directory=checkpoint_path,
+        max_to_keep=5
+    )
+    
+    # Restore from the latest checkpoint if it exists
+    if checkpoint_manager.latest_checkpoint:
+        status = checkpoint.restore(checkpoint_manager.latest_checkpoint)
+        status.expect_partial()  # Allows partial restoration
+        
+        # Log restored checkpoint
+        logging.info(f"Restored from checkpoint: {checkpoint_manager.latest_checkpoint}")
+        
+        # Optionally, log missing and unused variables for debugging
+        missing_vars = status.missing_variables
+        unused_vars = status.unused_variables
+        
+        if missing_vars:
+            logging.warning(f"Missing variables during restoration: {missing_vars}")
+        if unused_vars:
+            logging.warning(f"Unused variables in checkpoint: {unused_vars}")
     else:
-        checkpoint = tf.train.Checkpoint(
-            generator_optimizer=generator_optimizer,
-            discriminator_optimizer=discriminator_optimizer,
-            generator=generator,
-            discriminator=discriminator
-        )
+        logging.info("No checkpoint found. Initializing from scratch.")
 
     # Load paired images
     print("Loading and pairing images...")
@@ -122,9 +142,12 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
             generated_hsi = generator(augmented_rgb_batch)
 
             # Visualize current results
-            visualize_generated_images(
-                augmented_rgb_batch, generated_hsi, augmented_hsi_batch,
-                epoch, i // config.BATCH_SIZE)
+            try:
+                visualize_generated_images(
+                    augmented_rgb_batch, generated_hsi, augmented_hsi_batch,
+                    epoch, i // config.BATCH_SIZE)
+            except Exception as e:
+                logging.error(f"Error during visualization at Epoch {epoch}, Batch {i//config.BATCH_SIZE}: {str(e)}")
 
             # Save generated HSI images
             for j in range(generated_hsi.shape[0]):
@@ -144,34 +167,43 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                     # Otherwise, save as normal RGB or grayscale
                     image_path = os.path.join(generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.png')
                     imageio.imwrite(image_path, (generated_hsi_np * 255).astype(np.uint8))  # Scale to 0-255 if saving as PNG
-
-            # Prepare discriminator inputs
-            combined_real = tf.concat([augmented_hsi_batch, augmented_rgb_batch], axis=-1)
-            combined_fake = tf.concat([generated_hsi, augmented_rgb_batch], axis=-1)
-
+            
+            # Prepare discriminator inputs by concatenating RGB first, then HSI
+            combined_real = tf.concat([augmented_rgb_batch, augmented_hsi_batch], axis=-1)
+            combined_fake = tf.concat([augmented_rgb_batch, generated_hsi], axis=-1)
+            
             # Train discriminator
             with tf.GradientTape() as disc_tape:
-                disc_real = discriminator(combined_real)
-                disc_fake = discriminator(combined_fake)
-                disc_loss = discriminator_loss(disc_real, disc_fake, combined_real, combined_fake, discriminator)  # Pass the missing arguments
-
+                disc_real = discriminator(combined_real, training=True)
+                disc_fake = discriminator(combined_fake, training=True)
+                # Pass concatenated inputs instead of discriminator outputs
+                disc_loss = discriminator_loss(combined_real, combined_fake, discriminator)
+            
             gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
+            gradients_of_discriminator = [tf.clip_by_norm(g, 1.0) for g in gradients_of_discriminator]
             discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
-
+            
             # Train generator
             with tf.GradientTape() as gen_tape:
-                generated_hsi = generator(augmented_rgb_batch)
-                combined_fake = tf.concat([generated_hsi, augmented_rgb_batch], axis=-1)
-                gen_loss = generator_loss(discriminator(combined_fake), generated_hsi, augmented_hsi_batch, lambda_pixel=20, lambda_perceptual=0.5)  # Adjust loss weights
-
+                generated_hsi = generator(augmented_rgb_batch, training=True)
+                combined_fake = tf.concat([augmented_rgb_batch, generated_hsi], axis=-1)
+                fake_output = discriminator(combined_fake, training=True)
+                gen_loss = generator_loss(fake_output, generated_hsi, augmented_hsi_batch, lambda_pixel=20, lambda_perceptual=0.5)
+            
             gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
+            
+            # Ensure no None gradients before clipping
+            gradients_of_generator = [
+                tf.clip_by_norm(g, 1.0) if g is not None else tf.zeros_like(v)
+                for g, v in zip(gradients_of_generator, generator.trainable_variables)
+            ]
             generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
-
+            
             # Log weight norms for Generator
             for var in generator.trainable_variables:
                 var_norm = tf.norm(var).numpy()
                 logging.info(f"Generator {var.name} norm: {var_norm:.4f}")
-
+            
             # Log weight norms for Discriminator
             for var in discriminator.trainable_variables:
                 var_norm = tf.norm(var).numpy()
@@ -248,10 +280,28 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
     # Load the generator model
     generator = Generator()
     checkpoint = tf.train.Checkpoint(generator=generator)
-    latest_ckpt = tf.train.latest_checkpoint(checkpoint_path)
+    checkpoint_manager = tf.train.CheckpointManager(
+        checkpoint,
+        directory=checkpoint_path,
+        max_to_keep=5
+    )
+    latest_ckpt = checkpoint_manager.latest_checkpoint
+    
     if latest_ckpt:
-        checkpoint.restore(latest_ckpt).expect_partial()
-        logging.info(f"Model restored from checkpoint: {latest_ckpt}")
+        status = checkpoint.restore(latest_ckpt)
+        status.expect_partial()  # Allows partial restoration
+        
+        # Log restored checkpoint
+        logging.info(f"Generator model restored from checkpoint: {latest_ckpt}")
+        
+        # Optionally, log missing and unused variables for debugging
+        missing_vars = status.missing_variables
+        unused_vars = status.unused_variables
+        
+        if missing_vars:
+            logging.warning(f"Missing variables during generator restoration: {missing_vars}")
+        if unused_vars:
+            logging.warning(f"Unused variables in generator checkpoint: {unused_vars}")
     else:
         logging.error("No checkpoint found. Please check the checkpoint path.")
         return
@@ -305,8 +355,8 @@ if __name__ == "__main__":
         generator = Generator()
         discriminator = Discriminator()
 
-        generator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE * 0.5, beta_1=config.BETA_1)
-        discriminator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE * 0.5, beta_1=config.BETA_1)
+        generator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE, beta_1=config.BETA_1, decay=1e-5)
+        discriminator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE, beta_1=config.BETA_1, decay=1e-5)
 
         # Logging and Checkpointing
         log_dir = config.LOG_DIR
