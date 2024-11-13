@@ -19,7 +19,7 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
               discriminator: Discriminator, 
               generator_optimizer, discriminator_optimizer, checkpoint_path: str,
               target_size=(IMG_WIDTH, IMG_HEIGHT),
-              mode: str = "global"):
+              mode: str = "global"):    
     """
     Trains the GAN model with the provided parameters.
 
@@ -243,6 +243,7 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
     
     # Convert RGB images to tensor
     rgb_tensor = tf.convert_to_tensor(rgb_images, dtype=tf.float32)
+    print("RGB images converted to tensor")
     
     # Load the generator model
     generator = Generator()
