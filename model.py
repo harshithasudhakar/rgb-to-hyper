@@ -37,24 +37,27 @@ class PerceptualLoss(tf.keras.losses.Loss):
     def __init__(self):
         super(PerceptualLoss, self).__init__()
         vgg = VGG19(include_top=False, weights='imagenet')
-        self.feature_extractor = tf.keras.Model(inputs=vgg.input, outputs=vgg.get_layer('block3_conv3').output)
+        self.feature_extractor = tf.keras.Model(
+            inputs=vgg.input,
+            outputs=[vgg.get_layer('block3_conv3').output,
+                     vgg.get_layer('block4_conv3').output]
+        )
         self.feature_extractor.trainable = False
 
     def call(self, y_true, y_pred):
         # Convert HSI to RGB by averaging or selecting specific bands
-        y_true_rgb = tf.image.resize(y_true[..., :3], (224, 224))  # Resize to VGG19 input size
-        y_pred_rgb = tf.image.resize(y_pred[..., :3], (224, 224))  # Resize to VGG19 input size
+        y_true_rgb = tf.image.resize(y_true[..., :3], (224, 224))
+        y_pred_rgb = tf.image.resize(y_pred[..., :3], (224, 224))
 
         y_true_features = self.feature_extractor(y_true_rgb)
         y_pred_features = self.feature_extractor(y_pred_rgb)
-        
-        # Calculate perceptual loss using the extracted features
-        perceptual_loss_value = tf.reduce_mean(tf.square(y_true_features - y_pred_features))
-        
-        # Calculate pixel-wise loss using the original HSI images
-        pixel_loss_value = tf.reduce_mean(tf.square(y_true - y_pred))
-        
-        # Combine perceptual loss and pixel-wise loss
+
+        perceptual_loss_value = 0
+        for true_feat, pred_feat in zip(y_true_features, y_pred_features):
+            perceptual_loss_value += tf.reduce_mean(tf.square(true_feat - pred_feat))
+
+        pixel_loss_value = tf.reduce_mean(tf.abs(y_true - y_pred))
+
         return perceptual_loss_value + pixel_loss_value
 
 # SAM Loss function
@@ -67,56 +70,108 @@ def spectral_angle_loss(y_true, y_pred):
 
 # ResNet Block for Generator
 class ResNetBlock(layers.Layer):
-    def __init__(self, filters, kernel_size=3):
-        super(ResNetBlock, self).__init__()
-        self.conv1 = layers.Conv2D(filters, kernel_size, padding="same", use_bias=False)
-        self.in1 = layers.BatchNormalization()
-        self.conv2 = layers.Conv2D(filters, kernel_size, padding="same", use_bias=False)
-        self.in2 = layers.BatchNormalization()
-
-    def call(self, x):
-        residual = x
-        x = tf.nn.relu(self.in1(self.conv1(x)))
-        x = self.in2(self.conv2(x))
-        return x + residual
-
-# Generator Model
-class Generator(tf.keras.Model):
-    def __init__(self):
-        super(Generator, self).__init__()
-        self.encoder1 = layers.Conv2D(128, (4, 4), strides=2, padding="same", use_bias=False)  # Increase filters
-        self.encoder2 = layers.Conv2D(256, (4, 4), strides=2, padding="same", use_bias=False)  # Increase filters
-        self.encoder3 = layers.Conv2D(512, (4, 4), strides=2, padding="same", use_bias=False)  # Increase filters
-        self.encoder4 = layers.Conv2D(1024, (4, 4), strides=2, padding="same", use_bias=False)  # Increase filters
-        self.encoder5 = layers.Conv2D(2048, (4, 4), strides=2, padding="same", use_bias=False)  # Increase filters
-        self.resnet_blocks = [ResNetBlock(2048) for _ in range(6)]  # Increase filters
-        self.decoder1 = layers.Conv2DTranspose(1024, (4, 4), strides=2, padding="same", use_bias=False)  # Increase filters
-        self.decoder2 = layers.Conv2DTranspose(512, (4, 4), strides=2, padding="same", use_bias=False)  # Increase filters
-        self.decoder3 = layers.Conv2DTranspose(256, (4, 4), strides=2, padding="same", use_bias=False)  # Increase filters
-        self.decoder4 = layers.Conv2DTranspose(128, (4, 4), strides=2, padding="same", use_bias=False)  # Increase filters
-        self.decoder5 = layers.Conv2DTranspose(HSI_CHANNELS, (4, 4), strides=2, padding="same", activation="tanh", use_bias=False)
-        self.dropout = layers.Dropout(0.5)  # Add dropout
+    def __init__(self, filters, kernel_size=3, name=None):
+        super(ResNetBlock, self).__init__(name=name)
+        self.conv1 = layers.Conv2D(filters, kernel_size, padding="same", use_bias=False, name=f'{name}_conv1')
+        self.bn1 = layers.BatchNormalization(name=f'{name}_bn1')
+        self.relu = layers.Activation('relu', name=f'{name}_relu')
+        self.conv2 = layers.Conv2D(filters, kernel_size, padding="same", use_bias=False, name=f'{name}_conv2')
+        self.bn2 = layers.BatchNormalization(name=f'{name}_bn2')
 
     def call(self, x, training=False):
+        residual = x
+        x = self.conv1(x)
+        x = self.bn1(x, training=training)
+        x = self.relu(x)
+        x = self.conv2(x)
+        x = self.bn2(x, training=training)
+        return x + residual
+
+class Generator(tf.keras.Model):
+    def __init__(self, HSI_CHANNELS=31, name='generator'):
+        super(Generator, self).__init__(name=name)
+        # Encoder layers
+        self.encoder1 = layers.Conv2D(64, (4, 4), strides=2, padding="same", use_bias=False, name='encoder1')
+        self.bn1 = layers.BatchNormalization(name='bn1')
+        self.leaky_relu = layers.LeakyReLU(alpha=0.2, name='leaky_relu')
+
+        self.encoder2 = layers.Conv2D(128, (4, 4), strides=2, padding="same", use_bias=False, name='encoder2')
+        self.bn2 = layers.BatchNormalization(name='bn2')
+
+        self.encoder3 = layers.Conv2D(256, (4, 4), strides=2, padding="same", use_bias=False, name='encoder3')
+        self.bn3 = layers.BatchNormalization(name='bn3')
+
+        self.encoder4 = layers.Conv2D(512, (4, 4), strides=2, padding="same", use_bias=False, name='encoder4')
+        self.bn4 = layers.BatchNormalization(name='bn4')
+
+        # ResNet blocks
+        self.resnet_blocks = [ResNetBlock(512, name=f'res_net_block_{i}') for i in range(6)]
+
+        # Decoder layers
+        self.decoder1 = layers.Conv2DTranspose(256, (4, 4), strides=2, padding="same", use_bias=False, name='decoder1')
+        self.bn_decoder1 = layers.BatchNormalization(name='bn_decoder1')
+        self.relu = layers.ReLU(name='relu')
+
+        self.decoder2 = layers.Conv2DTranspose(128, (4, 4), strides=2, padding="same", use_bias=False, name='decoder2')
+        self.bn_decoder2 = layers.BatchNormalization(name='bn_decoder2')
+
+        self.decoder3 = layers.Conv2DTranspose(64, (4, 4), strides=2, padding="same", use_bias=False, name='decoder3')
+        self.bn_decoder3 = layers.BatchNormalization(name='bn_decoder3')
+
+        # Final decoder layer
+        self.decoder4 = layers.Conv2DTranspose(
+            HSI_CHANNELS, (4, 4), strides=2, padding="same", activation="tanh", use_bias=False, name='decoder4'
+        )
+
+        self.dropout = layers.Dropout(0.5, name='dropout')
+
+        self.concat = layers.Concatenate(name='concat')
+
+    def call(self, x, training=False):
+        # Encoder
         e1 = self.encoder1(x)
-        e2 = self.encoder2(tf.nn.leaky_relu(e1))
-        e3 = self.encoder3(tf.nn.leaky_relu(e2))
-        e4 = self.encoder4(tf.nn.leaky_relu(e3))
-        e5 = self.encoder5(tf.nn.leaky_relu(e4))
+        e1 = self.bn1(e1, training=training)
+        e1 = self.leaky_relu(e1)
+
+        e2 = self.encoder2(e1)
+        e2 = self.bn2(e2, training=training)
+        e2 = self.leaky_relu(e2)
+
+        e3 = self.encoder3(e2)
+        e3 = self.bn3(e3, training=training)
+        e3 = self.leaky_relu(e3)
+
+        e4 = self.encoder4(e3)
+        e4 = self.bn4(e4, training=training)
+        e4 = self.leaky_relu(e4)
+
+        # ResNet blocks
         for block in self.resnet_blocks:
-            e5 = block(e5)
-        d1 = self.decoder1(tf.nn.relu(e5))
-        d1 = layers.Concatenate()([d1, e4])  # Skip connection
-        d2 = self.decoder2(tf.nn.relu(d1))
-        d2 = layers.Concatenate()([d2, e3])  # Skip connection
-        d3 = self.decoder3(tf.nn.relu(d2))
-        d3 = layers.Concatenate()([d3, e2])  # Skip connection
-        d4 = self.decoder4(tf.nn.relu(d3))
-        d4 = layers.Concatenate()([d4, e1])  # Skip connection
-        d5 = self.decoder5(tf.nn.relu(d4))
-        if training:
-            d5 = self.dropout(d5, training=training)  # Apply dropout during training
-        return d5
+            e4 = block(e4, training=training)
+
+        # Decoder
+        d1 = self.decoder1(e4)
+        d1 = self.bn_decoder1(d1, training=training)
+        d1 = self.relu(d1)
+        d1 = self.dropout(d1, training=training)
+        d1 = self.concat([d1, e3])  # Skip connection
+
+        d2 = self.decoder2(d1)
+        d2 = self.bn_decoder2(d2, training=training)
+        d2 = self.relu(d2)
+        d2 = self.dropout(d2, training=training)
+        d2 = self.concat([d2, e2])  # Skip connection
+
+        d3 = self.decoder3(d2)
+        d3 = self.bn_decoder3(d3, training=training)
+        d3 = self.relu(d3)
+        d3 = self.dropout(d3, training=training)
+        d3 = self.concat([d3, e1])  # Skip connection
+
+        # Final decoder layer to generate HSI
+        d4 = self.decoder4(d3)
+
+        return d4
 
 # Discriminator Model
 class Discriminator(tf.keras.Model):
