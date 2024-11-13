@@ -142,6 +142,10 @@ def check_normalization(hsi_images: dict):
         print(f"{fname}: Min = {min_val}, Max = {max_val}")
 
 
+import os
+import tensorflow as tf
+import logging
+
 def load_rgb_images(rgb_path, target_size=(256, 256)):
     """
     Load RGB images from the specified directory.
@@ -395,9 +399,9 @@ def apply_paired_augmentation(rgb_batch, hsi_batch):
         - augmented_hsi_batch: The augmented batch of HSI images.
     """
     data_gen = tf.keras.preprocessing.image.ImageDataGenerator(
-        rotation_range=20,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
+        rotation_range=10,
+        width_shift_range=0.1,
+        height_shift_range=0.1,
         horizontal_flip=True,
         fill_mode='nearest'
     )
