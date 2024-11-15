@@ -9,7 +9,13 @@ from scipy.io import loadmat
 from PIL import Image
 from model import Generator, Discriminator
 from config import HSI_CHANNELS, IMG_WIDTH, IMG_HEIGHT, OUT_DIR_PATH
+from tensorflow.keras.optimizers import Adam
 
+def compile_model(model, learning_rate=1e-4):
+    model.compile(optimizer=Adam(learning_rate),
+                  loss='binary_crossentropy',  # Change to 'categorical_crossentropy' for multi-class
+                  metrics=['accuracy'])
+    return model
 
 def load_hsi_images(hsi_dir: str) -> dict:
     """
@@ -489,6 +495,113 @@ def extract_bands(input_dir: str, output_dir: str):
                 f"Extracted {cube_data.shape[2]} bands from {mat_file} and saved as TIFF in {mat_output_folder}.")
         else:
             print(f"'cube' key not found in {mat_file}.")
+
+
+def save_hsi_image(hsi_image: np.ndarray, filename: str, save_dir: str):
+    """
+    Saves a single HSI image as a multi-band TIFF file.
+
+    Args:
+        hsi_image (np.ndarray): HSI image array with shape (height, width, channels).
+        filename (str): Base filename without extension.
+        save_dir (str): Directory to save the TIFF file.
+    """
+    try:
+        # Define the output file path
+        output_path = os.path.join(save_dir, f"{filename}_hsi.tiff")
+        
+        # Save using tifffile
+        tiff.imwrite(output_path, hsi_image, photometric='minisblack')
+        logging.info(f"Saved HSI image: {output_path}")
+    except Exception as e:
+        logging.error(f"Failed to save HSI image for {filename}: {str(e)}")
+        
+def visualize_hsi_band(filepath, band_index=0):
+    """
+    Visualize a specific band from a multi-band TIFF file.
+
+    Args:
+        filepath (str): Path to the TIFF file.
+        band_index (int): Band index to display.
+    """
+    try:
+        hsi = tiff.imread(filepath)
+        if hsi.ndim == 3 and hsi.shape[-1] >= band_index + 1:
+            band = hsi[:, :, band_index]
+            plt.imshow(band, cmap='gray')
+            plt.title(f"HSI Band {band_index}")
+            plt.axis('off')
+            plt.show()
+        else:
+            print(f"Unexpected TIFF shape: {hsi.shape}")
+    except Exception as e:
+        print(f"Error loading TIFF {filepath}: {e}")
+
+
+def load_data(image_dir, mask_dir, img_height=IMG_HEIGHT, img_width=IMG_WIDTH):
+    images = []
+    masks = []
+
+    image_filenames = sorted([f for f in os.listdir(image_dir) if f.endswith(('.tiff', '.tif'))])
+    mask_filenames = sorted([f for f in os.listdir(mask_dir) if f.endswith(('.tiff', '.tif'))])
+
+    for img_name, mask_name in zip(image_filenames, mask_filenames):
+        # Load RGB Image
+        img_path = os.path.join(image_dir, img_name)
+        rgb_image = tiff.imread(img_path)  # Shape: (H, W, 3)
+        
+        # Normalize RGB Image
+        rgb_image = rgb_image.astype(np.float32) / 255.0
+
+        # Load HSI Image
+        hsi_path = img_path.replace('rgb_micro', 'hsi_micro')  # Adjust if HSI images are in a different directory
+        hsi_image = tiff.imread(hsi_path)  # Shape: (H, W, 31)
+        
+        # Normalize HSI Image
+        hsi_image = hsi_image.astype(np.float32) / np.max(hsi_image)
+
+        # Load Mask
+        mask_path = os.path.join(mask_dir, mask_name)
+        mask = tiff.imread(mask_path)  # Shape: (H, W)
+        
+        # If mask has multiple channels, convert to single channel
+        if len(mask.shape) == 3:
+            mask = mask[:, :, 0]
+
+        # Resize Images and Masks if necessary
+        rgb_image = tf.image.resize(rgb_image, [img_height, img_width]).numpy()
+        hsi_image = tf.image.resize(hsi_image, [img_height, img_width]).numpy()
+        mask = tf.image.resize(mask[..., np.newaxis], [img_height, img_width], method='nearest').numpy()
+
+        images.append(hsi_image)
+        masks.append(mask)
+
+    images = np.array(images)
+    masks = np.array(masks)
+
+    return images, masks
+
+def generate_and_save_masks(model, input_dir, output_dir, img_height=IMG_HEIGHT, img_width=IMG_WIDTH):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    image_filenames = sorted([f for f in os.listdir(input_dir) if f.endswith(('.tiff', '.tif'))])
+    
+    for img_name in image_filenames:
+        img_path = os.path.join(input_dir, img_name)
+        hsi_image = tiff.imread(img_path)
+        hsi_image = hsi_image.astype(np.float32) / np.max(hsi_image)
+        hsi_image = tf.image.resize(hsi_image, [img_height, img_width]).numpy()
+        hsi_image = np.expand_dims(hsi_image, axis=0)  # Add batch dimension
+        
+        # Predict mask
+        pred_mask = model.predict(hsi_image)[0]
+        pred_mask = (pred_mask > 0.5).astype(np.uint8)  # Binarize if using sigmoid
+        
+        # Save mask
+        mask_save_path = os.path.join(output_dir, img_name.replace('.tiff', '_mask.tiff'))
+        tiff.imwrite(mask_save_path, pred_mask.squeeze())
+        print(f"Saved mask to {mask_save_path}")
 
 
 def clear_session():
