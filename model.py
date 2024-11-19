@@ -30,6 +30,7 @@ class SpectralNormalization(layers.Layer):
         
         if self.layer.use_bias:
             outputs = tf.nn.bias_add(outputs, self.layer.bias)
+        
         return outputs
 
 # Perceptual Loss using VGG19
@@ -45,20 +46,19 @@ class PerceptualLoss(tf.keras.losses.Loss):
         self.feature_extractor.trainable = False
 
     def call(self, y_true, y_pred):
-        # Convert HSI to RGB by averaging or selecting specific bands
-        y_true_rgb = tf.image.resize(y_true[..., :3], (224, 224))
-        y_pred_rgb = tf.image.resize(y_pred[..., :3], (224, 224))
+        # Preprocess inputs for VGG19
+        y_true = tf.keras.applications.vgg19.preprocess_input(y_true * 255.0)
+        y_pred = tf.keras.applications.vgg19.preprocess_input(y_pred * 255.0)
 
-        y_true_features = self.feature_extractor(y_true_rgb)
-        y_pred_features = self.feature_extractor(y_pred_rgb)
+        # Extract features
+        features_true = self.feature_extractor(y_true)
+        features_pred = self.feature_extractor(y_pred)
 
-        perceptual_loss_value = 0
-        for true_feat, pred_feat in zip(y_true_features, y_pred_features):
-            perceptual_loss_value += tf.reduce_mean(tf.square(true_feat - pred_feat))
-
-        pixel_loss_value = tf.reduce_mean(tf.abs(y_true - y_pred))
-
-        return perceptual_loss_value + pixel_loss_value
+        # Compute perceptual loss (e.g., MSE between features)
+        loss = 0.0
+        for ft, fp in zip(features_true, features_pred):
+            loss += tf.reduce_mean(tf.square(ft - fp))
+        return loss
 
 # SAM Loss function
 def spectral_angle_loss(y_true, y_pred):
@@ -93,7 +93,7 @@ class Generator(tf.keras.Model):
         # Encoder layers
         self.encoder1 = layers.Conv2D(64, (4, 4), strides=2, padding="same", use_bias=False, name='encoder1')
         self.bn1 = layers.BatchNormalization(name='bn1')
-        self.leaky_relu = layers.LeakyReLU(alpha=0.2, name='leaky_relu')
+        self.leaky_relu = layers.LeakyReLU(negative_slope=0.2, name='leaky_relu')
 
         self.encoder2 = layers.Conv2D(128, (4, 4), strides=2, padding="same", use_bias=False, name='encoder2')
         self.bn2 = layers.BatchNormalization(name='bn2')
