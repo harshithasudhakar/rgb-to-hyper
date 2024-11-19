@@ -3,6 +3,7 @@ import shutil
 import zipfile
 import logging
 from main import load_model_and_predict
+from utils import visualize_hsi_band
 
 # Configure logging
 logging.basicConfig(
@@ -16,9 +17,9 @@ logging.basicConfig(
 
 # Define paths using raw strings
 extract_dir = r"C:\Harshi\ECS-II\Dataset\extracted"
-rgb_dir = r"C:\Harshi\ECS-II\Dataset\rgb_micro"
+rgb_dir = r"C:\Harshi\ECS-II\Dataset\val_set"
 mask_dir = r"C:\Harshi\ECS-II\Dataset\mask_micro"
-zip_file_path = r"C:\Harshi\ECS-II\Dataset\images.zip"
+zip_file_path = r"C:\Harshi\ECS-II\Dataset\dataverse_files full"
 
 """# Extract the zip file
 with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
@@ -59,3 +60,6 @@ try:
     )
 except Exception as e:
     logging.error(f"An error occurred during prediction: {str(e)}")
+
+# Visualization of HSI band
+visualize_hsi_band(r'C:\Harshi\ECS-II\Dataset\gen_hsi\ARAD_HS_0451_clean_hsi.tiff', band_index=0)
