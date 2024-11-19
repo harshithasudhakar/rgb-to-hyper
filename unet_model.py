@@ -1,45 +1,24 @@
+# unet_model.py
+
 import os
 import numpy as np
-import cv2
 import tensorflow as tf
-import matplotlib.pyplot as plt
+import tifffile as tiff  # Import tifffile for reading TIFF files
 from sklearn.model_selection import train_test_split
-from tensorflow.keras import layers, models
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Conv2DTranspose, Concatenate, Input
-from tensorflow.keras.models import Model
+from utils import load_data
+from tensorflow.keras import layers, Model
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, Concatenate
 
 # Hyperparameters
 IMG_HEIGHT, IMG_WIDTH = 256, 256
+N_CLASSES = 1  # Binary segmentation
 BATCH_SIZE = 16
 EPOCHS = 50
-IMG_PATH = r'c:\Harshi\ECS-II\Dataset\rgb_micro'  # Path to your images
+IMG_PATH = r'c:\Harshi\ECS-II\Dataset\rgb_micro'  # Path to your RGB images
 MASK_PATH = r'c:\Harshi\ECS-II\Dataset\mask_micro'  # Path to your masks
-MODEL_PATH = 'unet_microplastics.h5'
+MODEL_PATH = r'C:\Harshi\ecs-venv\rgb-to-hyper\rgb-to-hyper-main\rgb-to-hyper'
 
-# Load and preprocess the dataset
-def load_data(image_dir, mask_dir):
-    images = []
-    masks = []
-
-    for filename in os.listdir(image_dir):
-        if filename.endswith('.npy'):
-            image = np.load(os.path.join(image_dir, filename))
-            image = cv2.resize(image, (IMG_WIDTH, IMG_HEIGHT))
-            images.append(image)
-
-            mask_filename = filename.replace('.npy', '_mask.npy')
-            mask = np.load(os.path.join(mask_dir, mask_filename))
-            mask = cv2.resize(mask, (IMG_WIDTH, IMG_HEIGHT))
-
-            # Convert to binary mask (single channel, 0 = background, 1 = target)
-            mask_binary = (mask > 0).astype(np.float32)  # Assuming non-zero pixels are the target
-            masks.append(mask_binary[..., np.newaxis])  # Add a channel dimension
-
-    return np.array(images), np.array(masks)
-
-# Define U-Net model
-def unet_model(input_shape=(256, 256, 3)):
+def build_unet(input_shape=(256, 256, 31), num_classes=1):
     inputs = Input(input_shape)
     
     # Encoder
@@ -85,66 +64,36 @@ def unet_model(input_shape=(256, 256, 3)):
     c9 = Conv2D(64, (3, 3), activation='relu', padding='same')(c9)
     
     # Output Layer
-    outputs = Conv2D(1, (1, 1), activation='sigmoid')(c9)
+    outputs = Conv2D(num_classes, (1, 1), activation='sigmoid')(c9)
     
     model = Model(inputs=[inputs], outputs=[outputs])
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model
 
-# Data Augmentation
-def augment_data(images, masks):
-    datagen = ImageDataGenerator(rotation_range=10, width_shift_range=0.1,
-                                 height_shift_range=0.1, shear_range=0.1,
-                                 zoom_range=0.1, horizontal_flip=True,
-                                 fill_mode='nearest')
-
-    return datagen.flow(images, masks, batch_size=BATCH_SIZE)
-
-# Visualize results with side-by-side comparison
-def visualize_results(model, X_val, y_val, num_examples=5):
-    for i in range(num_examples):
-        test_image = X_val[i]
-        true_mask = y_val[i, ..., 0]  # Single-channel true mask
-
-        # Predict the mask for the test image
-        pred_mask = model.predict(np.expand_dims(test_image, axis=0))[0, ..., 0]
-        pred_mask = (pred_mask > 0.5).astype(np.uint8)  # Threshold to binary mask
-
-        # Overlay the true and predicted masks on the image
-        overlay_true = test_image.copy()
-        overlay_pred = test_image.copy()
-
-        # Apply red overlay for the mask area
-        overlay_true[true_mask == 1] = [255, 0, 0]  # True mask overlay in red
-        overlay_pred[pred_mask == 1] = [255, 0, 0]  # Predicted mask overlay in red
-
-        # Plot the results
-        fig, ax = plt.subplots(1, 3, figsize=(18, 6))
-        ax[0].imshow(test_image)
-        ax[0].set_title("Original Image")
-        ax[1].imshow(overlay_true)
-        ax[1].set_title("True Mask Overlay")
-        ax[2].imshow(overlay_pred)
-        ax[2].set_title("Predicted Mask Overlay")
-        plt.show()
-
-# Main function to train the model
+# Example Usage
 if __name__ == "__main__":
-    # Load data
-    images, masks = load_data(IMG_PATH, MASK_PATH)
+    model = build_unet()
+    model.summary()
+
+    X, Y = load_data(IMG_PATH, MASK_PATH)
+    print(f"Loaded {X.shape[0]} samples.")
+    print(f"Image shape: {X.shape[1:]}")  # Expected: (256, 256, 31)
+    print(f"Mask shape: {Y.shape[1:]}")    # Expected: (256, 256, 1)
+
+    # Split the data
+    X_train, X_val, Y_train, Y_val = train_test_split(X, Y, test_size=0.2, random_state=42)
+    print(f"Training samples: {X_train.shape[0]}, Validation samples: {X_val.shape[0]}")
     
-    # Split into train and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(images, masks, test_size=0.2, random_state=42)
-
-    # Create U-Net model
-    model = unet_model(input_shape=(IMG_HEIGHT, IMG_WIDTH, 3))
-
-    # Train the model with data augmentation
-    train_generator = augment_data(X_train, y_train)
-    model.fit(train_generator, epochs=EPOCHS, validation_data=(X_val, y_val), verbose=1)
-
+    # Compile the model
+    model.compile(optimizer='adam',
+                  loss='binary_crossentropy',
+                  metrics=['accuracy', tf.keras.metrics.MeanIoU(num_classes=2)])
+    
+    # Train the model
+    model.fit(X_train, Y_train,
+              validation_data=(X_val, Y_val),
+              epochs=EPOCHS,
+              batch_size=BATCH_SIZE)
+    
     # Save the model
     model.save(MODEL_PATH)
-
-    # Visualize predictions
-    visualize_results(model, X_val, y_val, num_examples=5)
+    print(f"Model saved to {MODEL_PATH}")
