@@ -9,7 +9,7 @@ import tifffile
 from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH,HSI_IMAGE_PATH
 from model import Generator, Discriminator
 from loss import peak_signal_to_noise_ratio, spectral_angle_mapper, generator_loss, mean_squared_error, discriminator_loss
-from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation, clear_session, load_rgb_images
+from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation, load_rgb_images, save_hsi_image
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -49,10 +49,15 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
     
     # Restore from the latest checkpoint if it exists
     if checkpoint_manager.latest_checkpoint:
-        checkpoint.restore(checkpoint_manager.latest_checkpoint).expect_partial()
-        logging.info(f"Restored from {checkpoint_manager.latest_checkpoint}")
+        status = checkpoint.restore(checkpoint_manager.latest_checkpoint).expect_partial()
+        try:
+            status.assert_existing_objects_matched()
+            status.assert_consumed()
+            logging.info(f"Successfully restored from checkpoint: {checkpoint_manager.latest_checkpoint}")
+        except Exception as e:
+            logging.warning(f"Checkpoint restoration incomplete: {e}")
     else:
-        logging.info("Initializing from scratch.")
+        logging.info("No checkpoint found. Initializing from scratch.")
 
     # Clear the TensorFlow session
     #clear_session()
@@ -66,38 +71,6 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
     # Create output directory for generated images if it doesn't exist
     generated_hsi_dir = r'C:\Harshi\ECS-II\Dataset\gen_hsi'
     os.makedirs(generated_hsi_dir, exist_ok=True)
-
-    # Set up checkpointing based on mode
-    checkpoint = tf.train.Checkpoint(
-        generator=generator,
-        discriminator=discriminator,
-        generator_optimizer=generator_optimizer,
-        discriminator_optimizer=discriminator_optimizer
-    )
-    checkpoint_manager = tf.train.CheckpointManager(
-        checkpoint,
-        directory=checkpoint_path,
-        max_to_keep=5
-    )
-    
-    # Restore from the latest checkpoint if it exists
-    if checkpoint_manager.latest_checkpoint:
-        status = checkpoint.restore(checkpoint_manager.latest_checkpoint)
-        status.expect_partial()  # Allows partial restoration
-        
-        # Log restored checkpoint
-        logging.info(f"Restored from checkpoint: {checkpoint_manager.latest_checkpoint}")
-        
-        # Optionally, log missing and unused variables for debugging
-        missing_vars = status.missing_variables
-        unused_vars = status.unused_variables
-        
-        if missing_vars:
-            logging.warning(f"Missing variables during restoration: {missing_vars}")
-        if unused_vars:
-            logging.warning(f"Unused variables in checkpoint: {unused_vars}")
-    else:
-        logging.info("No checkpoint found. Initializing from scratch.")
 
     # Load paired images
     print("Loading and pairing images...")
@@ -251,7 +224,7 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 f.write(
                     f"Peak Signal-to-Noise Ratio: {sum(final_metrics['psnr']) / len(final_metrics['psnr']):.4f}\n")
                 f.write(
-                    f"Spectral Angle Mapper: {sum(final_metrics['sam']) / len(final_metrics['sam'])::.4f}\n")
+                    f"Spectral Angle Mapper: {sum(final_metrics['sam']) / len(final_metrics['sam']):.4f}\n")
 
 
 def load_model_and_predict(rgb_path: str, checkpoint_path: str):
@@ -289,31 +262,37 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
     
     if latest_ckpt:
         status = checkpoint.restore(latest_ckpt)
-        status.expect_partial()  # Allows partial restoration
-        
-        # Log restored checkpoint
-        logging.info(f"Generator model restored from checkpoint: {latest_ckpt}")
-        
-        # Optionally, log missing and unused variables for debugging
-        missing_vars = status.missing_variables
-        unused_vars = status.unused_variables
-        
-        if missing_vars:
-            logging.warning(f"Missing variables during generator restoration: {missing_vars}")
-        if unused_vars:
-            logging.warning(f"Unused variables in generator checkpoint: {unused_vars}")
+        try:
+            status.assert_existing_objects_matched()
+            status.assert_consumed()
+            logging.info(f"Successfully restored from checkpoint: {latest_ckpt}")
+        except Exception as e:
+            logging.warning(f"Checkpoint restoration incomplete: {e}")
     else:
         logging.error("No checkpoint found. Please check the checkpoint path.")
         return
-
+    
     # Make predictions
     generated_hsi = generator(rgb_tensor, training=False)
     
-    # Ensure generated_hsi has the expected number of channels
+    # Verify tensor shape
+    print(f"Generated HSI shape: {generated_hsi.shape}")
+    
+    # Ensure expected channels
     expected_channels = 31
     actual_channels = generated_hsi.shape[-1]
     if actual_channels != expected_channels:
         logging.warning(f"Generated HSI has {actual_channels} channels instead of {expected_channels}.")
+        # Attempt to transpose if channel dimension is incorrect
+        if generated_hsi.shape[1] == expected_channels:
+            generated_hsi = tf.transpose(generated_hsi, perm=[0, 2, 3, 1])
+            logging.info(f"Transposed Generated HSI shape: {generated_hsi.shape}")
+        else:
+            logging.error("Unexpected HSI tensor shape. Cannot proceed with saving.")
+            return
+    
+    # Convert to numpy for saving
+    generated_hsi = generated_hsi.numpy()
     
     # Define the directory to save generated HSI TIFF files
     generated_hsi_dir = r'C:\Harshi\ECS-II\Dataset\gen_hsi'
@@ -322,23 +301,23 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
     # Iterate through each generated HSI image and save as TIFF
     for j in range(generated_hsi.shape[0]):
         try:
-            # Clip values to [0, 1] and convert to float32
-            hsi_image = tf.clip_by_value(generated_hsi[j], 0, 1).numpy().astype(np.float32)
+            # Extract individual image
+            hsi_image = generated_hsi[j]
             
-            # Rearrange axes if necessary (assuming generator outputs (channels, height, width))
-            if hsi_image.shape[0] == expected_channels:
-                hsi_image = np.moveaxis(hsi_image, 0, -1)  # Convert to (height, width, channels)
-            elif hsi_image.shape[-1] != expected_channels:
-                logging.warning(f"Image {filenames[j]} has unexpected shape {hsi_image.shape}. Skipping.")
+            # Normalize to [0, 1] if necessary
+            hsi_image = (hsi_image + 1.0) / 2.0  # Assuming tanh activation
+            hsi_image = np.clip(hsi_image, 0.0, 1.0)
+            
+            # Scale to [0, 255] and convert to uint8
+            hsi_image = (hsi_image * 255).astype(np.uint8)
+            
+            # Ensure the shape is (height, width, channels)
+            if hsi_image.shape[-1] != expected_channels:
+                logging.error(f"Image {j} has incorrect channel dimension: {hsi_image.shape[-1]}")
                 continue
             
-            # Define the output file path
-            base_filename = os.path.splitext(filenames[j])[0]
-            output_path = os.path.join(generated_hsi_dir, f"{base_filename}_hsi.tiff")
-            
-            # Save the HSI image as a TIFF file
-            tifffile.imwrite(output_path, hsi_image)
-            logging.info(f"Saved HSI image: {output_path}")
+            # Save the HSI image using the utility function
+            save_hsi_image(hsi_image, os.path.splitext(filenames[j])[0], generated_hsi_dir)
         
         except Exception as e:
             logging.error(f"Failed to save HSI image for {filenames[j]}: {str(e)}")
@@ -355,22 +334,62 @@ if __name__ == "__main__":
         generator = Generator()
         discriminator = Discriminator()
 
-        generator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE, beta_1=config.BETA_1, decay=1e-5)
-        discriminator_optimizer = tf.keras.optimizers.Adam(config.LEARNING_RATE, beta_1=config.BETA_1, decay=1e-5)
-
-        # Logging and Checkpointing
-        log_dir = config.LOG_DIR
-        summary_writer = tf.summary.create_file_writer(log_dir)
-
+        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=config.LEARNING_RATE,
+            decay_steps=100000,
+            decay_rate=0.96,
+            staircase=True
+        )
+        
+        generator_optimizer = tf.keras.optimizers.Adam(
+            learning_rate=lr_schedule,
+            beta_1=config.BETA_1
+        )
+        
+        discriminator_optimizer = tf.keras.optimizers.Adam(
+            learning_rate=lr_schedule,
+            beta_1=config.BETA_1
+        )
+        
         # To save model checkpoints
         if mode == "global":
             checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'global_ckpt')
         else:
             checkpoint_path = os.path.join(config.CHECKPOINT_DIR, 'local_ckpt')
 
+        # Create checkpoint directory if it doesn't exist
+        os.makedirs(checkpoint_path, exist_ok=True)
+        logging.info(f"Checkpoint directory set to: {checkpoint_path}")
+
+        # Logging and Checkpointing
+        log_dir = config.LOG_DIR
+        summary_writer = tf.summary.create_file_writer(log_dir)
+
+        # Initialize Checkpoint and CheckpointManager
+        checkpoint = tf.train.Checkpoint(
+            generator=generator,
+            discriminator=discriminator,
+            generator_optimizer=generator_optimizer,
+            discriminator_optimizer=discriminator_optimizer
+        )
+           
+        checkpoint_manager = tf.train.CheckpointManager(
+            checkpoint,
+            directory=checkpoint_path,
+            max_to_keep=5
+        )
+
+        # Restore from the latest checkpoint if it exists
+        if checkpoint_manager.latest_checkpoint:
+            checkpoint.restore(checkpoint_manager.latest_checkpoint).expect_partial()
+            logging.info(f"Successfully restored from checkpoint: {checkpoint_manager.latest_checkpoint}")
+        else:
+            logging.info("No checkpoint found. Initializing from scratch.")
+        
         train_gan(rgb_path=RGB_IMAGE_PATH, hsi_path=HSI_IMAGE_PATH,
                   generator=generator, discriminator=discriminator,
                   generator_optimizer=generator_optimizer, 
                   discriminator_optimizer=discriminator_optimizer,
                   mode=mode,
                   checkpoint_path=checkpoint_path)
+        print("Training complete!")
