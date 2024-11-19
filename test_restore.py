@@ -1,44 +1,31 @@
-# Testing if Checkpoint is getting saved properly, need to update with corruption check
+# test_restore.py
 
+import tensorflow as tf
 import os
 import logging
-import tensorflow as tf
-from config import CHECKPOINT_DIR
-from model import Generator, Discriminator
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("test_restore.log"),
-        logging.StreamHandler()
-    ]
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-def test_restore():
-    generator = Generator()
-    discriminator = Discriminator()
-
-    checkpoint_path = os.path.join(CHECKPOINT_DIR, 'global_ckpt')
-
-    # Initialize Checkpoint Without Optimizers
-    checkpoint = tf.train.Checkpoint(
-        generator=generator,
-        discriminator=discriminator
-    )
-
-    checkpoint_manager = tf.train.CheckpointManager(
-        checkpoint,
-        directory=checkpoint_path,
-        max_to_keep=5
-    )
-
-    if checkpoint_manager.latest_checkpoint:
-        checkpoint.restore(checkpoint_manager.latest_checkpoint).expect_partial()
-        logging.info(f"Successfully restored from checkpoint: {checkpoint_manager.latest_checkpoint}")
+def list_all_checkpoints(checkpoint_dir):
+    """
+    Lists all available checkpoints in the specified directory.
+    Args:
+        checkpoint_dir (str): Path to the checkpoints directory.
+    Returns:
+        None
+    """
+    checkpoints = tf.train.get_checkpoint_state(checkpoint_dir)
+           
+    if checkpoints and checkpoints.all_model_checkpoint_paths:
+        logging.info("Available checkpoints:")
+        for path in checkpoints.all_model_checkpoint_paths:
+            print(path)
     else:
-        logging.info("No checkpoint found. Initializing from scratch.")
-
+        logging.error("No checkpoints found in the specified directory.")
 if __name__ == "__main__":
-    test_restore()
+    CHECKPOINT_DIR = r'C:\Harshi\ecs-venv\rgb-to-hyper\rgb-to-hyper-main\rgb-to-hyper\checkpoints'
+    list_all_checkpoints(CHECKPOINT_DIR)
