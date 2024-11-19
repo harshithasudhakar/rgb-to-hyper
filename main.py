@@ -6,7 +6,7 @@ import tensorflow as tf
 import imageio
 import logging
 import tifffile
-from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH,HSI_IMAGE_PATH
+from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH,HSI_IMAGE_PATH, RGB_MICRO_PATH, CHECKPOINT_DIR
 from model import Generator, Discriminator
 from loss import peak_signal_to_noise_ratio, spectral_angle_mapper, generator_loss, mean_squared_error, discriminator_loss
 from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation, load_rgb_images, save_hsi_image
@@ -253,18 +253,11 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
     # Load the generator model
     generator = Generator()
     checkpoint = tf.train.Checkpoint(generator=generator)
-    checkpoint_manager = tf.train.CheckpointManager(
-        checkpoint,
-        directory=checkpoint_path,
-        max_to_keep=5
-    )
-    latest_ckpt = checkpoint_manager.latest_checkpoint
+    latest_ckpt = tf.train.latest_checkpoint(CHECKPOINT_DIR)
     
     if latest_ckpt:
-        status = checkpoint.restore(latest_ckpt)
         try:
-            status.assert_existing_objects_matched()
-            status.assert_consumed()
+            checkpoint.restore(latest_ckpt).expect_partial()
             logging.info(f"Successfully restored from checkpoint: {latest_ckpt}")
         except Exception as e:
             logging.warning(f"Checkpoint restoration incomplete: {e}")
@@ -273,17 +266,20 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
         return
     
     # Make predictions
+    print("Generating HSI images...")
     generated_hsi = generator(rgb_tensor, training=False)
     
     # Verify tensor shape
     print(f"Generated HSI shape: {generated_hsi.shape}")
     
     # Ensure expected channels
+    print("Checking HSI channels...")
     expected_channels = 31
     actual_channels = generated_hsi.shape[-1]
     if actual_channels != expected_channels:
         logging.warning(f"Generated HSI has {actual_channels} channels instead of {expected_channels}.")
         # Attempt to transpose if channel dimension is incorrect
+        print("Attempting to transpose HSI tensor...")
         if generated_hsi.shape[1] == expected_channels:
             generated_hsi = tf.transpose(generated_hsi, perm=[0, 2, 3, 1])
             logging.info(f"Transposed Generated HSI shape: {generated_hsi.shape}")
@@ -292,31 +288,39 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
             return
     
     # Convert to numpy for saving
-    generated_hsi = generated_hsi.numpy()
+    print("Converting to numpy for saving...")
+    generated_hsi = generated_hsi.numpy().astype(np.float16)
     
     # Define the directory to save generated HSI TIFF files
+    print("Saving generated HSI images...")
     generated_hsi_dir = r'C:\Harshi\ECS-II\Dataset\gen_hsi'
     os.makedirs(generated_hsi_dir, exist_ok=True)
     
     # Iterate through each generated HSI image and save as TIFF
+    print("Iterating through generated HSI images...")
     for j in range(generated_hsi.shape[0]):
         try:
             # Extract individual image
+            print(f"Saving HSI image {j}...")
             hsi_image = generated_hsi[j]
             
             # Normalize to [0, 1] if necessary
+            print("Normalizing HSI image...")
             hsi_image = (hsi_image + 1.0) / 2.0  # Assuming tanh activation
             hsi_image = np.clip(hsi_image, 0.0, 1.0)
             
             # Scale to [0, 255] and convert to uint8
+            print("Scaling and converting to uint8...")
             hsi_image = (hsi_image * 255).astype(np.uint8)
             
             # Ensure the shape is (height, width, channels)
+            print("Ensuring correct shape...")
             if hsi_image.shape[-1] != expected_channels:
                 logging.error(f"Image {j} has incorrect channel dimension: {hsi_image.shape[-1]}")
                 continue
             
             # Save the HSI image using the utility function
+            print("Saving HSI image...")
             save_hsi_image(hsi_image, os.path.splitext(filenames[j])[0], generated_hsi_dir)
         
         except Exception as e:
@@ -329,7 +333,7 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
 if __name__ == "__main__":
     mode = "global"
     if mode == "predict":
-        load_model_and_predict(rgb_path=RGB_IMAGE_PATH, checkpoint_path=config.CHECKPOINT_DIR)
+        load_model_and_predict(rgb_path=RGB_MICRO_PATH, checkpoint_path=config.CHECKPOINT_DIR)
     else:
         generator = Generator()
         discriminator = Discriminator()
