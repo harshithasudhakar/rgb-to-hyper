@@ -1,22 +1,93 @@
 # unet_model.py
 
+import logging
 import os
 import numpy as np
+from PIL import Image
 import tensorflow as tf
 import tifffile as tiff  # Import tifffile for reading TIFF files
 from sklearn.model_selection import train_test_split
-from utils import load_data
-from tensorflow.keras import layers, Model
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, Concatenate
+from tensorflow.keras import layers, Model # type: ignore
+from tensorflow.keras.utils import Sequence # type: ignore
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, Concatenate # type: ignore
 
 # Hyperparameters
 IMG_HEIGHT, IMG_WIDTH = 256, 256
 N_CLASSES = 1  # Binary segmentation
 BATCH_SIZE = 16
 EPOCHS = 5
-IMG_PATH = r'C:\Harshi\ECS-II\Dataset\temp-gen-hsi'  # Path to your HSI images
-MASK_PATH = r'C:\Harshi\ECS-II\Dataset\temp-mask'  # Path to your masks
-MODEL_PATH = r'C:\Harshi\ecs-venv\rgb-to-hyper\rgb-to-hyper-main\rgb-to-hyper'
+IMG_PATH = r"C:\Harshi\ECS-II\Dataset\temp-gen-hsi"  # Path to your HSI images
+MASK_PATH = r"C:\Harshi\ECS-II\Dataset\temp-mask"  # Path to your masks
+MODEL_PATH = r"C:\Harshi\ecs-venv\rgb-to-hyper\rgb-to-hyper-main\rgb-to-hyper"
+
+class HSIGenerator(Sequence):
+    def __init__(self, img_dir, mask_dir, batch_size=16, img_height=256, img_width=256, desired_channels=31, shuffle=True):
+        self.img_dir = img_dir
+        self.mask_dir = mask_dir
+        self.batch_size = batch_size
+        self.img_height = img_height
+        self.img_width = img_width
+        self.desired_channels = desired_channels
+        self.shuffle = shuffle
+        self.img_files = [f for f in os.listdir(img_dir) if f.lower().endswith(('.tiff', '.tif'))]
+        self.mask_files = [f for f in os.listdir(mask_dir) if f.lower().endswith(('.tiff', '.tif', '.png', '.jpg', '.jpeg'))]
+        self.mask_dict = {os.path.splitext(f)[0].lower(): f for f in self.mask_files}
+        self.on_epoch_end()
+
+    def __len__(self):
+        return int(np.floor(len(self.img_files) / self.batch_size))
+
+    def __getitem__(self, index):
+        batch_imgs = self.img_files[index*self.batch_size:(index+1)*self.batch_size]
+        X, Y = self.__data_generation(batch_imgs)
+        return X, Y
+
+    def on_epoch_end(self):
+        if self.shuffle:
+            np.random.shuffle(self.img_files)
+
+    def __data_generation(self, batch_imgs):
+        X = []
+        Y = []
+        for img_file in batch_imgs:
+            img_base = os.path.splitext(img_file)[0].lower()
+            if '_hsi' in img_base:
+                num_part = img_base.split('_hsi')[0]
+            else:
+                continue  # Skip files without '_hsi'
+
+            expected_mask_base = f"{num_part}-1"
+            mask_file = self.mask_dict.get(expected_mask_base)
+            if not mask_file:
+                continue  # Skip if no corresponding mask
+
+            img_path = os.path.join(self.img_dir, img_file)
+            mask_path = os.path.join(self.mask_dir, mask_file)
+
+            try:
+                # Load and preprocess HSI image
+                img = tiff.imread(img_path)
+                if img.shape[0] < self.desired_channels:
+                    continue  # Skip if insufficient channels
+                elif img.shape[0] > self.desired_channels:
+                    img = img[:self.desired_channels, :, :]
+                img = img.transpose(1, 2, 0)
+                img = tf.image.resize(img, [self.img_height, self.img_width]).numpy()
+                img = img / np.max(img)
+                X.append(img)
+
+                # Load and preprocess mask
+                mask = Image.open(mask_path).convert("L")
+                mask = mask.resize((self.img_width, self.img_height))
+                mask_array = np.array(mask) / 255.0
+                mask_array = np.expand_dims(mask_array, axis=-1)
+                Y.append(mask_array)
+
+            except Exception as e:
+                logging.error(f"Error loading {img_file} and {mask_file}: {e}")
+                continue
+
+        return np.array(X), np.array(Y)
 
 def build_unet(input_shape=(256, 256, 31), num_classes=1):
     inputs = Input(input_shape)
@@ -68,32 +139,3 @@ def build_unet(input_shape=(256, 256, 31), num_classes=1):
     
     model = Model(inputs=[inputs], outputs=[outputs])
     return model
-
-# Example Usage
-if __name__ == "__main__":
-    model = build_unet()
-    model.summary()
-
-    X, Y = load_data(IMG_PATH, MASK_PATH)
-    print(f"Loaded {X.shape[0]} samples.")
-    print(f"Image shape: {X.shape[1:]}")  # Expected: (256, 256, 31)
-    print(f"Mask shape: {Y.shape[1:]}")    # Expected: (256, 256, 1)
-
-    # Split the data
-    X_train, X_val, Y_train, Y_val = train_test_split(X, Y, test_size=0.2, random_state=42)
-    print(f"Training samples: {X_train.shape[0]}, Validation samples: {X_val.shape[0]}")
-    
-    # Compile the model
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy', tf.keras.metrics.MeanIoU(num_classes=2)])
-    
-    # Train the model
-    model.fit(X_train, Y_train,
-              validation_data=(X_val, Y_val),
-              epochs=EPOCHS,
-              batch_size=BATCH_SIZE)
-    
-    # Save the model
-    model.save(MODEL_PATH)
-    print(f"Model saved to {MODEL_PATH}")
