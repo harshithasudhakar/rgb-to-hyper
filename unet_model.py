@@ -13,9 +13,9 @@ from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose
 IMG_HEIGHT, IMG_WIDTH = 256, 256
 N_CLASSES = 1  # Binary segmentation
 BATCH_SIZE = 16
-EPOCHS = 50
-IMG_PATH = r'c:\Harshi\ECS-II\Dataset\rgb_micro'  # Path to your RGB images
-MASK_PATH = r'c:\Harshi\ECS-II\Dataset\mask_micro'  # Path to your masks
+EPOCHS = 5
+IMG_PATH = r'C:\Harshi\ECS-II\Dataset\temp-gen-hsi'  # Path to your HSI images
+MASK_PATH = r'C:\Harshi\ECS-II\Dataset\temp-mask'  # Path to your masks
 MODEL_PATH = r'C:\Harshi\ecs-venv\rgb-to-hyper\rgb-to-hyper-main\rgb-to-hyper'
 
 def build_unet(input_shape=(256, 256, 31), num_classes=1):
