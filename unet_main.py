@@ -6,12 +6,18 @@ import numpy as np
 import tifffile as tiff
 from config import CHECKPOINT_DIR
 from main import load_model_and_predict
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from unet_utils import load_data # type: ignore
+from unet_model import build_unet, HSIGenerator  # Import from the new module
+from utils import load_rgb_images
 from utils import (
     visualize_all_hsi_bands, 
     #create_hsi_grid_image,
     visualize_stacked_hsi,
     #visualize_false_color_composite,
-    visualize_pca_composite,
+    #visualize_pca_composite,
     #visualize_pca_3d
 )
 
@@ -25,11 +31,11 @@ logging.basicConfig(
     ]
 )
 
-# Define paths using raw strings
+"""# Define paths using raw strings
 extract_dir = r"C:\Harshi\ECS-II\Dataset\extracted"
 rgb_dir = r"C:\Harshi\ECS-II\Dataset\temp-rgb-micro"
 mask_dir = r"C:\Harshi\ECS-II\Dataset\mask_micro"
-zip_file_path = r"C:\Harshi\ECS-II\Dataset\dataverse_files full"
+zip_file_path = r"C:\Harshi\ECS-II\Dataset\dataverse_files full" """
 
 """# Extract the zip file
 with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
@@ -61,7 +67,7 @@ logging.info(os.listdir(rgb_dir))
 
 logging.info("Contents of 'mask_micro':")
 logging.info(os.listdir(mask_dir))"""
-
+"""
 # Call load_model_and_predict with the sorted images
 try:
     load_model_and_predict(
@@ -93,7 +99,6 @@ try:
         except Exception as e:
             logging.error(f"Failed to save stacked HSI: {e}")
         
-        """
         # Create and save a grid image of all bands
         grid_save_path = r"C:\Harshi\ECS-II\Dataset\gen_hsi\HSI_Bands_Grid.png"
         try:
@@ -117,7 +122,7 @@ try:
             )
         except Exception as e:
             logging.error(f"An error occurred during False-Color Composite visualization: {e}")
-        """
+        
         # PCA Composite Visualization
         try:
             pca_save_path = r"C:\Harshi\ECS-II\Dataset\gen_hsi\PCA_Composite.png"
@@ -129,7 +134,7 @@ try:
             )
         except Exception as e:
             logging.error(f"An error occurred during PCA Composite visualization: {e}")
-        """
+        
         # Interactive 3D PCA Visualization (Optional)
         try:
             visualize_pca_3d(
@@ -138,7 +143,6 @@ try:
             )
         except Exception as e:
             logging.error(f"An error occurred during 3D PCA visualization: {e}")
-            """
         
         # Stacked IMG visualization
         try:
@@ -151,3 +155,80 @@ try:
 
 except Exception as e:
     logging.error(f"An error occurred during HSI bands visualization and stacking: {str(e)}")
+"""
+if __name__ == "__main__":
+    IMG_HEIGHT, IMG_WIDTH = 256, 256
+    N_CLASSES = 1  # Binary segmentation
+    BATCH_SIZE = 16
+    EPOCHS = 5
+    IMG_PATH = r"C:\Harshi\ECS-II\Dataset\temp-gen-hsi"  # Path to your HSI images
+    MASK_PATH = r"C:\Harshi\ECS-II\Dataset\temp-mask"  # Path to your masks
+    MODEL_PATH = r"C:\Harshi\ecs-venv\rgb-to-hyper\rgb-to-hyper-main\rgb-to-hyper"
+
+    # Build and summarize the model
+    model = build_unet(input_shape=(256, 256, 31), num_classes=1)  # Adjust input channels if necessary
+    model.summary()
+
+    # Load data
+    try:
+        X, Y = load_data(IMG_PATH, MASK_PATH)
+    except ValueError as ve:
+        print(f"Data loading error: {ve}")
+        exit(1)
+
+    print(f"Loaded {X.shape[0]} samples.")
+    print(f"Image shape: {X.shape[1:]}")  # Expected: (256, 256, 3)
+    print(f"Mask shape: {Y.shape[1:]}")    # Expected: (256, 256, 1) 
+
+    if X.shape[0] == 0:
+        print("No samples loaded. Please check your data directories and file formats.")
+        exit(1)
+
+    # Split the data
+    X_train, X_val, Y_train, Y_val = train_test_split(
+        X, Y, test_size=0.2, random_state=42
+    )
+    print(f"Training samples: {X_train.shape[0]}, Validation samples: {X_val.shape[0]}")
+
+    # Initialize data generator
+    train_generator = HSIGenerator(
+        img_dir=IMG_PATH,
+        mask_dir=MASK_PATH,
+        batch_size=BATCH_SIZE,
+        img_height=256,
+        img_width=256,
+        desired_channels=31,
+        shuffle=True
+    )
+
+    # Optional: Validation generator
+    val_generator = HSIGenerator(
+        img_dir=IMG_PATH,
+        mask_dir=MASK_PATH,
+        batch_size=BATCH_SIZE,
+        img_height=256,
+        img_width=256,
+        desired_channels=31,
+        shuffle=False
+    )
+
+    # Compile the model
+    model.compile(
+        optimizer='adam',
+        loss='binary_crossentropy',
+        metrics=['accuracy', tf.keras.metrics.MeanIoU(num_classes=2)]
+    )
+
+    # Callbacks
+    checkpoint = ModelCheckpoint('best_model.h5', save_best_only=True, monitor='val_loss', mode='min')
+    early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+
+    # Train the model using generators
+    model.fit(
+        train_generator,
+        validation_data=val_generator,
+        epochs=EPOCHS,
+        callbacks=[checkpoint, early_stop]
+    )
+
+    print("Training complete!")
