@@ -140,77 +140,166 @@ def visualize_pca_3d(stacked_hsi: np.ndarray, n_components: int = 3):
     except Exception as e:
         logging.error(f"Error in 3D PCA visualization: {e}")
 
+def compile_model(model, learning_rate=1e-4):
+    model.compile(optimizer=Adam(learning_rate),
+                  loss='binary_crossentropy',  # Change to 'categorical_crossentropy' for multi-class
+                  metrics=['accuracy'])
+    return model
 
-def visualize_stacked_hsi(stacked_hsi: np.ndarray, figsize=(15, 15), save_path: str = None):
+def load_hsi_images(hsi_dir: str, target_size=(256, 256)) -> np.ndarray:
     """
-    Visualizes the stacked HSI data by displaying all bands in a comprehensive manner
-    without losing spectral information. This function creates an interactive 3D scatter
-    plot using the first three principal components to provide an overview of the spectral data.
+    Loads all HSI band images from the specified directory and stacks them into a single 3D NumPy array.
+
+    Args:
+        hsi_dir (str): Directory containing HSI band images (e.g., .tiff files).
+        target_size (tuple): Desired image size as (width, height).
+
+    Returns:
+        np.ndarray: Stacked HSI data with shape (height, width, bands).
+    """
+    try:
+        # List and sort all HSI band files
+        band_files = sorted([
+            f for f in os.listdir(hsi_dir)
+            if f.lower().endswith(('.tiff', '.tif'))
+        ])
+        
+        if not band_files:
+            logging.error(f"No HSI band files found in directory: {hsi_dir}")
+            return np.array([])
+        
+        bands = []
+        for band_file in band_files:
+            band_path = os.path.join(hsi_dir, band_file)
+            band_image = tiff.imread(band_path)
+            
+            # Resize if necessary
+            if band_image.shape != target_size:
+                band_image = np.array(Image.fromarray(band_image).resize(target_size, Image.BILINEAR))
+            
+            bands.append(band_image)
+            logging.debug(f"Loaded band {band_file} with shape {band_image.shape}")
+        
+        # Stack bands along the third axis to form (height, width, bands)
+        stacked_hsi = np.stack(bands, axis=-1)
+        logging.info(f"HSI data stacked with shape: {stacked_hsi.shape}")
+        return stacked_hsi
+    
+    except Exception as e:
+        logging.error(f"Error loading and stacking HSI images: {e}")
+        return np.array([])
+
+
+def visualize_hsi_stacked(stacked_hsi: np.ndarray, save_path: str = None):
+    """
+    Visualizes the stacked HSI data as an image with shape (height, width, bands).
 
     Args:
         stacked_hsi (np.ndarray): Stacked HSI data with shape (height, width, bands).
-        figsize (tuple): Size of the figure for static plots (not used in interactive plots).
-        save_path (str, optional): Path to save the interactive plot as an HTML file.
+        save_path (str, optional): Path to save the visualization image. If None, the image is not saved.
 
     Returns:
         None
     """
     try:
-        # Reshape the HSI data for PCA
+        if stacked_hsi.ndim != 3:
+            logging.error(f"HSI data must be a 3D array, got {stacked_hsi.ndim}D array instead.")
+            return
+        
         height, width, bands = stacked_hsi.shape
-        reshaped_hsi = stacked_hsi.reshape(-1, bands)
+        logging.info(f"Visualizing stacked HSI with shape: {stacked_hsi.shape}")
         
-        # Apply PCA to reduce dimensionality to 3 components for visualization
-        pca = PCA(n_components=3)
-        principal_components = pca.fit_transform(reshaped_hsi)
+        # Optionally, normalize the data for better visualization
+        stacked_hsi_normalized = stacked_hsi.astype(float)
+        for i in range(bands):
+            band_min = np.min(stacked_hsi[:, :, i])
+            band_max = np.max(stacked_hsi[:, :, i])
+            if band_max - band_min > 0:
+                stacked_hsi_normalized[:, :, i] = (stacked_hsi[:, :, i] - band_min) / (band_max - band_min)
+            else:
+                stacked_hsi_normalized[:, :, i] = 0
+            logging.debug(f"Band {i} normalized: min={band_min}, max={band_max}")
         
-        # Create an interactive 3D scatter plot using Plotly
-        fig = go.Figure(data=[go.Scatter3d(
-            x=principal_components[:, 0],
-            y=principal_components[:, 1],
-            z=principal_components[:, 2],
-            mode='markers',
-            marker=dict(
-                size=2,
-                color=principal_components[:, 0],  # Color by the first principal component
-                colorscale='Viridis',
-                opacity=0.8
-            )
-        )])
+        # Display the stacked HSI as a multi-channel image
+        plt.figure(figsize=(12, 12))
+        plt.imshow(stacked_hsi_normalized)
+        plt.title('Stacked HSI Image (Height x Width x Bands)')
+        plt.axis('off')
         
-        fig.update_layout(
-            title='3D PCA Scatter Plot of Stacked HSI Data',
-            scene=dict(
-                xaxis_title='PC 1',
-                yaxis_title='PC 2',
-                zaxis_title='PC 3'
-            ),
-            width=800,
-            height=800
-        )
-        
-        # Show the interactive plot
-        fig.show()
-        
-        # Save the interactive plot if a save path is provided
         if save_path:
-            fig.write_html(save_path)
-            logging.info(f"Stacked HSI interactive visualization saved to: {save_path}")
+            plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
+            logging.info(f"Stacked HSI visualization saved to: {save_path}")
         
+        plt.show()
+    
     except Exception as e:
-        logging.error(f"Error in visualize_stacked_hsi: {e}")
+        logging.error(f"Error visualizing stacked HSI: {e}")
 
+
+def visualize_all_hsi_bands(filepath: str, bands: List[int] = None, figsize=(20, 15)) -> np.ndarray:
+    """
+    Visualizes all HSI bands in a grid and returns the HSI data as a NumPy array.
+
+    Args:
+        filepath (str): Path to the HSI TIFF file.
+        bands (List[int], optional): Specific band indices to visualize. If None, visualize all bands.
+        figsize (tuple): Size of the matplotlib figure.
+
+    Returns:
+        np.ndarray: The loaded HSI data with shape (height, width, bands).
+    """
+    try:
+        hsi = tiff.imread(filepath)
+        total_bands = hsi.shape[-1]
         
+        if bands is None:
+            bands = list(range(total_bands))
+        else:
+            # Validate band indices
+            bands = [b for b in bands if 0 <= b < total_bands]
+            if not bands:
+                logging.error("No valid band indices provided.")
+                return np.array([])
+        
+        num_bands = len(bands)
+        cols = 5  # Number of columns in the grid
+        rows = num_bands // cols + int(num_bands % cols != 0)
+        
+        fig, axes = plt.subplots(rows, cols, figsize=figsize)
+        axes = axes.flatten()
+        
+        for idx, band in enumerate(bands):
+            ax = axes[idx]
+            band_data = hsi[:, :, band]
+            ax.imshow(band_data, cmap='gray')
+            ax.set_title(f'Band {band}')
+            ax.axis('off')
+        
+        # Hide any remaining subplots if num_bands is not a multiple of cols
+        for idx in range(num_bands, len(axes)):
+            axes[idx].axis('off')
+        
+        plt.tight_layout()
+        plt.show()
+        
+        logging.info(f"Displayed {num_bands} bands from {filepath}")
+        return hsi
+    
+    except Exception as e:
+        logging.error(f"Error visualizing all HSI bands: {e}")
+        return np.array([])
+
+
 def create_hsi_grid_image(stacked_hsi: np.ndarray, cols: int = 5, figsize=(25, 20), save_path: str = None):
     """
     Creates a single image grid displaying all HSI bands.
-    
+
     Args:
         stacked_hsi (np.ndarray): Stacked HSI data with shape (height, width, bands).
         cols (int): Number of columns in the grid.
         figsize (tuple): Size of the figure.
         save_path (str, optional): Path to save the grid image. If None, the image is not saved.
-    
+
     Returns:
         None
     """
@@ -235,7 +324,7 @@ def create_hsi_grid_image(stacked_hsi: np.ndarray, cols: int = 5, figsize=(25, 2
         plt.tight_layout()
         
         if save_path:
-            plt.savefig(save_path)
+            plt.savefig(save_path, bbox_inches='tight')
             logging.info(f"HSI grid image saved to: {save_path}")
         
         plt.show()
@@ -244,41 +333,62 @@ def create_hsi_grid_image(stacked_hsi: np.ndarray, cols: int = 5, figsize=(25, 2
         logging.error(f"Error creating HSI grid image: {e}")
 
 
-def compile_model(model, learning_rate=1e-4):
-    model.compile(optimizer=Adam(learning_rate),
-                  loss='binary_crossentropy',  # Change to 'categorical_crossentropy' for multi-class
-                  metrics=['accuracy'])
-    return model
-
-def load_hsi_images(hsi_dir: str) -> dict:
+def visualize_stacked_hsi(stacked_hsi: np.ndarray, save_path: str = None):
     """
-    Loads Hyperspectral Imaging (HSI) images from a specified directory.
-    This function scans through the given directory, identifies subdirectories,
-    and loads TIFF files from each subdirectory into a dictionary. The keys of
-    the dictionary are the filenames of the TIFF images, and the values are the
-    loaded image data.
+    Visualizes all 31 HSI bands as separate greyscale layers in a single image.
+    Each band is displayed as a semi-transparent layer to preserve spatial and spectral data.
+    
     Args:
-        hsi_dir (str): The directory containing subdirectories with HSI images.
+        stacked_hsi (np.ndarray): Stacked HSI data with shape (height, width, bands).
+        save_path (str, optional): Path to save the visualization image. If None, the image is not saved.
+    
     Returns:
-        dict: A dictionary where the keys are TIFF filenames and the values are
-              the corresponding loaded image data.
-    Prints:
-        The total number of HSI images loaded.
+        None
     """
-    hsi_images = {}
-
-    for folder in os.listdir(hsi_dir):
-        folder_path = os.path.join(hsi_dir, folder)
-        if os.path.isdir(folder_path):
-
-            # Load each TIFF file in the current folder
-            for tiff_file in os.listdir(folder_path):
-                if tiff_file.endswith('.tiff') or tiff_file.endswith('.tif'):
-                    image_path = os.path.join(folder_path, tiff_file)
-                    hsi_images[tiff_file] = tiff.imread(image_path)
-    print(f"There are a total of {len(hsi_images)} HSI images")
-    return hsi_images
-
+    try:
+        if stacked_hsi.ndim != 3:
+            logging.error(f"HSI data must be a 3D array, got {stacked_hsi.ndim}D array instead.")
+            return
+        
+        height, width, bands = stacked_hsi.shape
+        logging.info(f"Visualizing stacked HSI with shape: {stacked_hsi.shape}")
+        
+        # Create an empty canvas
+        canvas = np.zeros((height, width), dtype=float)
+        
+        # Normalize each band and add to the canvas with opacity
+        opacity = 1.0 / bands  # Distribute opacity across bands
+        
+        for i in range(bands):
+            band = stacked_hsi[:, :, i]
+            band_min = band.min()
+            band_max = band.max()
+            if band_max - band_min > 0:
+                band_normalized = (band - band_min) / (band_max - band_min)
+            else:
+                band_normalized = np.zeros_like(band)
+                logging.warning(f"Band {i+1} has constant value. Displaying as black.")
+            
+            # Accumulate the normalized bands
+            canvas += band_normalized * opacity
+        
+        # Clip the canvas to [0,1]
+        canvas = np.clip(canvas, 0, 1)
+        
+        # Plot the accumulated canvas
+        plt.figure(figsize=(8, 8))
+        plt.imshow(canvas, cmap='gray')
+        plt.title('Stacked HSI Image (All 31 Bands Combined)')
+        plt.axis('off')
+        
+        if save_path:
+            plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
+            logging.info(f"Stacked HSI visualization saved to: {save_path}")
+        
+        plt.show()
+    
+    except Exception as e:
+        logging.error(f"Error visualizing stacked HSI: {e}")
 
 def load_tiff_images(tiff_dir):
     """
@@ -749,58 +859,6 @@ def save_hsi_image(hsi_image: np.ndarray, filename: str, save_dir: str):
     except Exception as e:
         logging.error(f"Failed to save HSI image for {filename}: {str(e)}")
         
-def visualize_all_hsi_bands(filepath: str, bands: List[int] = None, figsize=(20, 15)) -> np.ndarray:
-    """
-    Visualizes multiple bands of an HSI image in a grid layout and returns the HSI data.
-    
-    Args:
-        filepath (str): Path to the HSI TIFF file.
-        bands (List[int], optional): Specific band indices to visualize. If None, visualize all bands.
-        figsize (tuple): Size of the entire figure.
-    
-    Returns:
-        np.ndarray: The loaded HSI data.
-    """
-    try:
-        hsi = tiff.imread(filepath)
-        total_bands = hsi.shape[-1]
-        
-        if bands is None:
-            bands = list(range(total_bands))
-        else:
-            # Validate band indices
-            bands = [b for b in bands if 0 <= b < total_bands]
-            if not bands:
-                logging.error("No valid band indices provided.")
-                return np.array([])
-        
-        num_bands = len(bands)
-        cols = 5  # Number of columns in the grid
-        rows = num_bands // cols + int(num_bands % cols != 0)
-        
-        fig, axes = plt.subplots(rows, cols, figsize=figsize)
-        axes = axes.flatten()
-        
-        for idx, band in enumerate(bands):
-            ax = axes[idx]
-            band_data = hsi[:, :, band]
-            ax.imshow(band_data, cmap='gray')
-            ax.set_title(f'Band {band}')
-            ax.axis('off')
-        
-        # Hide any remaining subplots if num_bands is not a multiple of cols
-        for idx in range(num_bands, len(axes)):
-            axes[idx].axis('off')
-        
-        plt.tight_layout()
-        plt.show()
-        
-        logging.info(f"Displayed {num_bands} bands from {filepath}")
-        return hsi
-    
-    except Exception as e:
-        logging.error(f"Error visualizing HSI bands: {e}")
-        return np.array([])
 
 def load_data(image_dir, mask_dir, img_height=IMG_HEIGHT, img_width=IMG_WIDTH):
     images = []
