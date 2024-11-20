@@ -8,11 +8,11 @@ from config import CHECKPOINT_DIR
 from main import load_model_and_predict
 from utils import (
     visualize_all_hsi_bands, 
-    create_hsi_grid_image,
+    #create_hsi_grid_image,
     visualize_stacked_hsi,
-    visualize_false_color_composite,
+    #visualize_false_color_composite,
     visualize_pca_composite,
-    visualize_pca_3d
+    #visualize_pca_3d
 )
 
 # Configure logging
@@ -27,7 +27,7 @@ logging.basicConfig(
 
 # Define paths using raw strings
 extract_dir = r"C:\Harshi\ECS-II\Dataset\extracted"
-rgb_dir = r"C:\Harshi\ECS-II\Dataset\val_set"
+rgb_dir = r"C:\Harshi\ECS-II\Dataset\temp-rgb-micro"
 mask_dir = r"C:\Harshi\ECS-II\Dataset\mask_micro"
 zip_file_path = r"C:\Harshi\ECS-II\Dataset\dataverse_files full"
 
@@ -75,7 +75,7 @@ except Exception as e:
 try:
     # Visualize all bands
     hsi_data = visualize_all_hsi_bands(
-        filepath=r"C:\Harshi\ECS-II\Dataset\gen_hsi\ARAD_HS_0451_clean_hsi.tiff",  # Use the specific TIFF file
+        filepath=r"C:\Harshi\ECS-II\Dataset\gen_hsi\186_hsi.tiff",  # Use the specific TIFF file
         bands=None,              # Set to None to visualize all bands
         figsize=(25, 20)         # Adjust figsize as needed
     )
@@ -93,6 +93,7 @@ try:
         except Exception as e:
             logging.error(f"Failed to save stacked HSI: {e}")
         
+        """
         # Create and save a grid image of all bands
         grid_save_path = r"C:\Harshi\ECS-II\Dataset\gen_hsi\HSI_Bands_Grid.png"
         try:
@@ -116,7 +117,7 @@ try:
             )
         except Exception as e:
             logging.error(f"An error occurred during False-Color Composite visualization: {e}")
-        
+        """
         # PCA Composite Visualization
         try:
             pca_save_path = r"C:\Harshi\ECS-II\Dataset\gen_hsi\PCA_Composite.png"
@@ -128,7 +129,7 @@ try:
             )
         except Exception as e:
             logging.error(f"An error occurred during PCA Composite visualization: {e}")
-        
+        """
         # Interactive 3D PCA Visualization (Optional)
         try:
             visualize_pca_3d(
@@ -137,13 +138,16 @@ try:
             )
         except Exception as e:
             logging.error(f"An error occurred during 3D PCA visualization: {e}")
+            """
         
         # Stacked IMG visualization
         try:
             visualize_stacked_hsi(stacked_hsi, save_path=r"C:\Harshi\ECS-II\Dataset\gen_hsi\stacked_hsi.tiff")
         except Exception as e:
             logging.error(f"An error occurred during stacked HSI visualization: {str(e)}")
+    
     else:
         logging.error("HSI data is empty. Stacking and visualization skipped.")
+
 except Exception as e:
     logging.error(f"An error occurred during HSI bands visualization and stacking: {str(e)}")
