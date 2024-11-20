@@ -9,7 +9,240 @@ from scipy.io import loadmat
 from PIL import Image
 from model import Generator, Discriminator
 from config import HSI_CHANNELS, IMG_WIDTH, IMG_HEIGHT, OUT_DIR_PATH
-from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam # type: ignore
+import plotly.graph_objects as go # type: ignore
+from sklearn.decomposition import PCA
+
+def visualize_false_color_composite(stacked_hsi: np.ndarray, bands: List[int] = [29, 19, 9], figsize=(10, 10), save_path: str = None):
+    """
+    Creates a false-color composite from specified HSI bands.
+
+    Args:
+        stacked_hsi (np.ndarray): Stacked HSI data with shape (height, width, bands).
+        bands (List[int]): List of three band indices to use for RGB channels.
+        figsize (tuple): Size of the figure.
+        save_path (str, optional): Path to save the composite image.
+
+    Returns:
+        None
+    """
+    try:
+        if len(bands) != 3:
+            logging.error("Three band indices must be provided for RGB channels.")
+            return
+        
+        # Extract the specified bands
+        rgb = stacked_hsi[:, :, bands]
+        
+        # Normalize the bands for display
+        rgb_normalized = rgb / np.max(rgb, axis=(0, 1), keepdims=True)
+        
+        plt.figure(figsize=figsize)
+        plt.imshow(rgb_normalized)
+        plt.title(f'False-Color Composite (Bands {bands})')
+        plt.axis('off')
+        
+        if save_path:
+            plt.savefig(save_path)
+            logging.info(f"False-Color Composite saved to: {save_path}")
+        
+        plt.show()
+    
+    except Exception as e:
+        logging.error(f"Error in False-Color Composite visualization: {e}")
+
+def visualize_pca_composite(stacked_hsi: np.ndarray, n_components: int = 3, figsize=(10, 10), save_path: str = None):
+    """
+    Reduces HSI data to 3 principal components and visualizes as an RGB image.
+
+    Args:
+        stacked_hsi (np.ndarray): Stacked HSI data with shape (height, width, bands).
+        n_components (int): Number of principal components to retain.
+        figsize (tuple): Size of the figure.
+        save_path (str, optional): Path to save the PCA composite image.
+
+    Returns:
+        None
+    """
+    try:
+        height, width, bands = stacked_hsi.shape
+        # Reshape the data for PCA
+        reshaped_hsi = stacked_hsi.reshape(-1, bands)
+        
+        # Apply PCA
+        pca = PCA(n_components=n_components)
+        principal_components = pca.fit_transform(reshaped_hsi)
+        
+        # Reshape back to image format
+        pca_image = principal_components.reshape(height, width, n_components)
+        
+        # Normalize for display
+        pca_normalized = pca_image / np.max(pca_image, axis=(0, 1), keepdims=True)
+        
+        plt.figure(figsize=figsize)
+        plt.imshow(pca_normalized)
+        plt.title(f'PCA Composite (Top {n_components} Components)')
+        plt.axis('off')
+        
+        if save_path:
+            plt.savefig(save_path)
+            logging.info(f"PCA Composite saved to: {save_path}")
+        
+        plt.show()
+    
+    except Exception as e:
+        logging.error(f"Error in PCA Composite visualization: {e}")
+
+def visualize_pca_3d(stacked_hsi: np.ndarray, n_components: int = 3):
+    """
+    Creates an interactive 3D scatter plot of the first three PCA components.
+
+    Args:
+        stacked_hsi (np.ndarray): Stacked HSI data with shape (height, width, bands).
+        n_components (int): Number of principal components to use for 3D visualization.
+
+    Returns:
+        None
+    """
+    try:
+        height, width, bands = stacked_hsi.shape
+        reshaped_hsi = stacked_hsi.reshape(-1, bands)
+        
+        pca = PCA(n_components=n_components)
+        principal_components = pca.fit_transform(reshaped_hsi)
+        
+        fig = go.Figure(data=[go.Scatter3d(
+            x=principal_components[:, 0],
+            y=principal_components[:, 1],
+            z=principal_components[:, 2],
+            mode='markers',
+            marker=dict(
+                size=2,
+                color=principal_components[:, 0],  # Color by first principal component
+                colorscale='Viridis',
+                opacity=0.8
+            )
+        )])
+        
+        fig.update_layout(
+            title='3D PCA Scatter Plot',
+            scene=dict(
+                xaxis_title='PC 1',
+                yaxis_title='PC 2',
+                zaxis_title='PC 3'
+            ),
+            width=800,
+            height=800
+        )
+        
+        fig.show()
+    
+    except Exception as e:
+        logging.error(f"Error in 3D PCA visualization: {e}")
+
+
+def visualize_stacked_hsi(stacked_hsi: np.ndarray, figsize=(15, 15), save_path: str = None):
+    """
+    Visualizes the stacked HSI data by displaying all bands in a comprehensive manner
+    without losing spectral information. This function creates an interactive 3D scatter
+    plot using the first three principal components to provide an overview of the spectral data.
+
+    Args:
+        stacked_hsi (np.ndarray): Stacked HSI data with shape (height, width, bands).
+        figsize (tuple): Size of the figure for static plots (not used in interactive plots).
+        save_path (str, optional): Path to save the interactive plot as an HTML file.
+
+    Returns:
+        None
+    """
+    try:
+        # Reshape the HSI data for PCA
+        height, width, bands = stacked_hsi.shape
+        reshaped_hsi = stacked_hsi.reshape(-1, bands)
+        
+        # Apply PCA to reduce dimensionality to 3 components for visualization
+        pca = PCA(n_components=3)
+        principal_components = pca.fit_transform(reshaped_hsi)
+        
+        # Create an interactive 3D scatter plot using Plotly
+        fig = go.Figure(data=[go.Scatter3d(
+            x=principal_components[:, 0],
+            y=principal_components[:, 1],
+            z=principal_components[:, 2],
+            mode='markers',
+            marker=dict(
+                size=2,
+                color=principal_components[:, 0],  # Color by the first principal component
+                colorscale='Viridis',
+                opacity=0.8
+            )
+        )])
+        
+        fig.update_layout(
+            title='3D PCA Scatter Plot of Stacked HSI Data',
+            scene=dict(
+                xaxis_title='PC 1',
+                yaxis_title='PC 2',
+                zaxis_title='PC 3'
+            ),
+            width=800,
+            height=800
+        )
+        
+        # Show the interactive plot
+        fig.show()
+        
+        # Save the interactive plot if a save path is provided
+        if save_path:
+            fig.write_html(save_path)
+            logging.info(f"Stacked HSI interactive visualization saved to: {save_path}")
+        
+    except Exception as e:
+        logging.error(f"Error in visualize_stacked_hsi: {e}")
+
+        
+def create_hsi_grid_image(stacked_hsi: np.ndarray, cols: int = 5, figsize=(25, 20), save_path: str = None):
+    """
+    Creates a single image grid displaying all HSI bands.
+    
+    Args:
+        stacked_hsi (np.ndarray): Stacked HSI data with shape (height, width, bands).
+        cols (int): Number of columns in the grid.
+        figsize (tuple): Size of the figure.
+        save_path (str, optional): Path to save the grid image. If None, the image is not saved.
+    
+    Returns:
+        None
+    """
+    try:
+        total_bands = stacked_hsi.shape[-1]
+        rows = total_bands // cols + int(total_bands % cols != 0)
+        
+        fig, axes = plt.subplots(rows, cols, figsize=figsize)
+        axes = axes.flatten()
+        
+        for idx in range(total_bands):
+            ax = axes[idx]
+            band_data = stacked_hsi[:, :, idx]
+            ax.imshow(band_data, cmap='gray')
+            ax.set_title(f'Band {idx}')
+            ax.axis('off')
+        
+        # Hide remaining axes
+        for idx in range(total_bands, len(axes)):
+            axes[idx].axis('off')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path)
+            logging.info(f"HSI grid image saved to: {save_path}")
+        
+        plt.show()
+    
+    except Exception as e:
+        logging.error(f"Error creating HSI grid image: {e}")
+
 
 def compile_model(model, learning_rate=1e-4):
     model.compile(optimizer=Adam(learning_rate),
@@ -516,27 +749,58 @@ def save_hsi_image(hsi_image: np.ndarray, filename: str, save_dir: str):
     except Exception as e:
         logging.error(f"Failed to save HSI image for {filename}: {str(e)}")
         
-def visualize_hsi_band(filepath, band_index=0):
+def visualize_all_hsi_bands(filepath: str, bands: List[int] = None, figsize=(20, 15)) -> np.ndarray:
     """
-    Visualize a specific band from a multi-band TIFF file.
-
+    Visualizes multiple bands of an HSI image in a grid layout and returns the HSI data.
+    
     Args:
-        filepath (str): Path to the TIFF file.
-        band_index (int): Band index to display.
+        filepath (str): Path to the HSI TIFF file.
+        bands (List[int], optional): Specific band indices to visualize. If None, visualize all bands.
+        figsize (tuple): Size of the entire figure.
+    
+    Returns:
+        np.ndarray: The loaded HSI data.
     """
     try:
         hsi = tiff.imread(filepath)
-        if hsi.ndim == 3 and hsi.shape[-1] >= band_index + 1:
-            band = hsi[:, :, band_index]
-            plt.imshow(band, cmap='gray')
-            plt.title(f"HSI Band {band_index}")
-            plt.axis('off')
-            plt.show()
+        total_bands = hsi.shape[-1]
+        
+        if bands is None:
+            bands = list(range(total_bands))
         else:
-            print(f"Unexpected TIFF shape: {hsi.shape}")
+            # Validate band indices
+            bands = [b for b in bands if 0 <= b < total_bands]
+            if not bands:
+                logging.error("No valid band indices provided.")
+                return np.array([])
+        
+        num_bands = len(bands)
+        cols = 5  # Number of columns in the grid
+        rows = num_bands // cols + int(num_bands % cols != 0)
+        
+        fig, axes = plt.subplots(rows, cols, figsize=figsize)
+        axes = axes.flatten()
+        
+        for idx, band in enumerate(bands):
+            ax = axes[idx]
+            band_data = hsi[:, :, band]
+            ax.imshow(band_data, cmap='gray')
+            ax.set_title(f'Band {band}')
+            ax.axis('off')
+        
+        # Hide any remaining subplots if num_bands is not a multiple of cols
+        for idx in range(num_bands, len(axes)):
+            axes[idx].axis('off')
+        
+        plt.tight_layout()
+        plt.show()
+        
+        logging.info(f"Displayed {num_bands} bands from {filepath}")
+        return hsi
+    
     except Exception as e:
-        print(f"Error loading TIFF {filepath}: {e}")
-
+        logging.error(f"Error visualizing HSI bands: {e}")
+        return np.array([])
 
 def load_data(image_dir, mask_dir, img_height=IMG_HEIGHT, img_width=IMG_WIDTH):
     images = []
