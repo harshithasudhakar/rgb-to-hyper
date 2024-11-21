@@ -1,0 +1,2 @@
+model_checkpoint_path: "global_ckpt"
+all_model_checkpoint_paths: ["global_ckpt"]
