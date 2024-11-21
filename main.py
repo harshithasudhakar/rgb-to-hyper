@@ -289,7 +289,7 @@ def load_model_and_predict(rgb_path: str, checkpoint_path: str):
 
     # Define the directory to save generated HSI TIFF files
     print("Saving generated HSI images...")
-    generated_hsi_dir = r'C:\Harshi\ECS-II\Dataset\gen_hsi'
+    generated_hsi_dir = r'D:\ecs\rgb-to-hyper\data\gen_his'
     os.makedirs(generated_hsi_dir, exist_ok=True)
 
     # Iterate through each generated HSI image and save as TIFF

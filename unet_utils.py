@@ -87,7 +87,8 @@ def load_data(img_dir: str, mask_dir: str, img_height: int = 256, img_width: int
             try:
                 # Load and preprocess the HSI image (31 channels)
                 img = tiff.imread(img_path)  # Shape: (Bands, Height, Width)
-                img = img.transpose(1, 2, 0)  # Convert to (Height, Width, Bands)
+
+                 # Convert to (Height, Width, Bands)
                 img = tf.image.resize(img, [img_height, img_width]).numpy()
                 img = img / np.max(img)  # Normalize based on max value
                 X.append(img)

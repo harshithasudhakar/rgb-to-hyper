@@ -101,7 +101,7 @@ class HSIGenerator(Sequence):
             try:
                 # Load and preprocess HSI image
                 img = tiff.imread(img_path)  # Shape: (Bands, Height, Width)
-                bands = img.shape[0]
+                bands = img.shape[2]
                 logging.debug(f"Image '{img_file}' loaded with shape {img.shape}")
 
                 if bands < self.desired_channels:
@@ -113,7 +113,7 @@ class HSIGenerator(Sequence):
                     img = img[:self.desired_channels, :, :]  # Retain the first 'desired_channels' bands
                     logging.debug(f"Image '{img_file}' channels reduced to {self.desired_channels}.")
 
-                img = img.transpose(1, 2, 0)  # Convert to (Height, Width, Channels)
+
                 logging.debug(f"Image '{img_file}' shape after transpose: {img.shape}")
 
                 img = img.astype('float32')
