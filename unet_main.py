@@ -8,7 +8,7 @@ from config import CHECKPOINT_DIR
 from main import load_model_and_predict
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping # type: ignore
 from unet_utils import load_data # type: ignore
 from unet_model import build_unet, HSIGenerator  # Import from the new module
 from utils import load_rgb_images
@@ -31,13 +31,16 @@ logging.basicConfig(
     ]
 )
 
-"""# Define paths using raw strings
+"""
+# Define paths using raw strings
 extract_dir = r"C:\Harshi\ECS-II\Dataset\extracted"
 rgb_dir = r"C:\Harshi\ECS-II\Dataset\temp-rgb-micro"
 mask_dir = r"C:\Harshi\ECS-II\Dataset\mask_micro"
-zip_file_path = r"C:\Harshi\ECS-II\Dataset\dataverse_files full" """
+zip_file_path = r"C:\Harshi\ECS-II\Dataset\dataverse_files full"
+"""
 
-"""# Extract the zip file
+"""
+# Extract the zip file
 with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
     zip_ref.extractall(extract_dir)
     logging.info(f"Extracted {zip_file_path} to {extract_dir}")
@@ -66,7 +69,8 @@ logging.info("Contents of 'rgb_micro':")
 logging.info(os.listdir(rgb_dir))
 
 logging.info("Contents of 'mask_micro':")
-logging.info(os.listdir(mask_dir))"""
+logging.info(os.listdir(mask_dir))
+"""
 """
 # Call load_model_and_predict with the sorted images
 try:
@@ -156,6 +160,32 @@ try:
 except Exception as e:
     logging.error(f"An error occurred during HSI bands visualization and stacking: {str(e)}")
 """
+
+def test_generator(generator):
+    X_test, Y_test = generator.__getitem__(0)
+    print(f"Test Batch - X shape: {X_test.shape}, Y shape: {Y_test.shape}")
+    
+    # Optional: Visualize one sample
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(12, 4))
+    
+    # Display the first band of the first image in the batch
+    plt.subplot(1, 3, 1)
+    plt.imshow(X_test[0][:,:,0], cmap='gray')
+    plt.title('Sample HSI Band 1')
+    
+    # Display the corresponding mask
+    plt.subplot(1, 3, 2)
+    plt.imshow(Y_test[0].squeeze(), cmap='gray')
+    plt.title('Sample Mask')
+    
+    # Display the last band of the first image in the batch
+    plt.subplot(1, 3, 3)
+    plt.imshow(X_test[0][:,:, -1], cmap='gray')
+    plt.title('Sample HSI Band 31')
+    
+    plt.show()
+
 if __name__ == "__main__":
     IMG_HEIGHT, IMG_WIDTH = 256, 256
     N_CLASSES = 1  # Binary segmentation
@@ -201,6 +231,9 @@ if __name__ == "__main__":
         shuffle=True
     )
 
+    # Test the generator
+    test_generator(train_generator)
+
     # Optional: Validation generator
     val_generator = HSIGenerator(
         img_dir=IMG_PATH,
@@ -220,7 +253,7 @@ if __name__ == "__main__":
     )
 
     # Callbacks
-    checkpoint = ModelCheckpoint('best_model.h5', save_best_only=True, monitor='val_loss', mode='min')
+    checkpoint = ModelCheckpoint('best_model.keras', save_best_only=True, monitor='val_loss', mode='min')
     early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
     # Train the model using generators
