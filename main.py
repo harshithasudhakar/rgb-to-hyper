@@ -5,8 +5,7 @@ import config
 import tensorflow as tf
 import imageio
 import logging
-import tifffile
-from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH, HSI_IMAGE_PATH, RGB_MICRO_PATH, CHECKPOINT_DIR
+from config import IMG_HEIGHT, IMG_WIDTH, RGB_IMAGE_PATH, HSI_IMAGE_PATH, RGB_MICRO_PATH, CHECKPOINT_DIR, GAN_HSI_PATH
 from model import Generator, Discriminator
 from loss import peak_signal_to_noise_ratio, spectral_angle_mapper, generator_loss, mean_squared_error, discriminator_loss
 from utils import load_paired_images, visualize_generated_images, apply_paired_augmentation, load_rgb_images, save_hsi_image
@@ -41,8 +40,9 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
     os.makedirs(metrics_dir, exist_ok=True)
 
     # Create output directory for generated images if it doesn't exist
-    generated_hsi_dir = r'C:\Harshi\ECS-II\Dataset\gen_hsi'
-    os.makedirs(generated_hsi_dir, exist_ok=True)
+    # generated_hsi_dir = r'C:\Harshi\ECS-II\Dataset\gen_hsi'
+    # os.makedirs(generated_hsi_dir, exist_ok=True)
+    os.makedirs(GAN_HSI_PATH, exist_ok=True)
 
     # Load paired images
     print("Loading and pairing images...")
@@ -110,13 +110,13 @@ def train_gan(rgb_path: str, hsi_path: str, generator: Generator,
                 if generated_hsi_np.ndim == 3 and generated_hsi_np.shape[0] > 3:
                     # Save as a multi-page TIFF file if there are more than 3 channels
                     image_path = os.path.join(
-                        generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.tiff')
+                        GAN_HSI_PATH, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.tiff')
                     imageio.mimwrite(image_path, generated_hsi_np.astype(
                         np.float32), format='tiff')
                 else:
                     # Otherwise, save as normal RGB or grayscale
                     image_path = os.path.join(
-                        generated_hsi_dir, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.png')
+                        GAN_HSI_PATH, f'generated_hsi_epoch{epoch+1}_batch{i//config.BATCH_SIZE}_img{j}.png')
                     # Scale to 0-255 if saving as PNG
                     imageio.imwrite(
                         image_path, (generated_hsi_np * 255).astype(np.uint8))
