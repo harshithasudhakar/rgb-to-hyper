@@ -13,6 +13,38 @@ from tensorflow.keras.optimizers import Adam # type: ignore
 import plotly.graph_objects as go # type: ignore
 from sklearn.decomposition import PCA
 
+def save_mask_overlay(image_path: str, mask: np.ndarray, output_path: str):
+    """
+    Overlays the segmentation mask on the original image and saves the result.
+
+    Args:
+        image_path (str): Path to the original RGB image.
+        mask (np.ndarray): Predicted mask array with shape (height, width, 1).
+        output_path (str): Path to save the overlay image.
+    """
+    # Load the original image
+    image = Image.open(image_path).convert("RGB")
+    
+    # Ensure mask is 2D
+    mask = mask.squeeze()
+    
+    # Resize image to match mask if necessary
+    if image.size != (mask.shape[1], mask.shape[0]):
+        image = image.resize((mask.shape[1], mask.shape[0]))
+    
+    # Create a red mask
+    mask_image = Image.fromarray((mask * 255).astype(np.uint8), mode='L')
+    red_mask = Image.new("RGB", mask_image.size, color=(255, 0, 0))
+    
+    # Composite the red mask onto the original image using the mask
+    overlay = Image.composite(red_mask, image, mask_image)
+    
+    # Blend the original image and the overlay
+    blended = Image.blend(image, overlay, alpha=0.5)
+    
+    # Save the blended image
+    blended.save(output_path)
+
 def visualize_false_color_composite(stacked_hsi: np.ndarray, bands: List[int] = [29, 19, 9], figsize=(10, 10), save_path: str = None):
     """
     Creates a false-color composite from specified HSI bands.
