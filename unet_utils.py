@@ -27,9 +27,16 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-def load_data(img_dir: str, mask_dir: str, img_height: int = 256, img_width: int = 256) -> Tuple[np.ndarray, np.ndarray]:
+import os
+import logging
+import numpy as np
+import tifffile as tiff
+import tensorflow as tf
+
+
+def load_data(img_dir, mask_dir, img_height, img_width):
     """
-    Loads and preprocesses images and their corresponding masks.
+    Loads and preprocesses HSI images and corresponding masks.
 
     Args:
         img_dir (str): Directory containing HSI images.
@@ -38,45 +45,32 @@ def load_data(img_dir: str, mask_dir: str, img_height: int = 256, img_width: int
         img_width (int): Desired image width after resizing.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray]: Tuple of NumPy arrays containing images and masks.
+        tuple: Two NumPy arrays containing preprocessed images and masks.
     """
-    try:
-        # Supported image and mask extensions
-        img_extensions = ('.tiff', '.tif', '.png', '.jpg', '.jpeg')
-        mask_extensions = ('.tiff', '.tif', '.png', '.jpg', '.jpeg')
+    X = []
+    Y = []
+    skipped_no_mask = 0
+    mask_dict = {}
 
-        # List all image and mask files
-        img_files = [f for f in os.listdir(img_dir) if f.lower().endswith(img_extensions)]
-        mask_files = [f for f in os.listdir(mask_dir) if f.lower().endswith(mask_extensions)]
-
-        logging.info(f"Found {len(img_files)} HSI images and {len(mask_files)} mask images.")
-
-        # Create a mapping from image base name to mask file
-        mask_dict = {}
-        for mask_file in mask_files:
-            mask_base = os.path.splitext(mask_file)[0].lower()
+    # Create a dictionary for quick mask lookup
+    for mask_file in os.listdir(mask_dir):
+        if mask_file.lower().endswith((".png", ".jpg", ".jpeg", ".tiff", ".tif")):
+            mask_base = os.path.splitext(mask_file)[0]  # Remove extension
             mask_dict[mask_base] = mask_file
 
-        X = []
-        Y = []
-        matched = 0
-        skipped_no_mask = 0
-        skipped_load_error = 0
+    for img_file in os.listdir(img_dir):
+        if img_file.lower().endswith((".tiff", ".tif", ".png", ".jpg", ".jpeg")):
+            img_base = os.path.splitext(img_file)[0]  # Remove extension
 
-        for img_file in img_files:
-            img_base = os.path.splitext(img_file)[0].lower()  # e.g., '011_hsi'
-            
-            # Extract the numerical part from the image filename
-            # Assuming image filenames are in the format '###_hsi.tiff'
             if '_hsi' in img_base:
-                num_part = img_base.split('_hsi')[0]  # e.g., '011'
+                num_part = img_base.split('_hsi')[0]  # e.g., '196'
             else:
                 logging.warning(f"Image filename '{img_file}' does not contain '_hsi'. Skipping.")
                 skipped_no_mask += 1
                 continue
 
             # Construct the expected mask filename based on your naming convention
-            # Masks are saved as '011-1.tiff', '012-1.tiff', etc.
+            # Masks are saved as '196-1.png', '197-1.png', etc.
             expected_mask_base = f"{num_part}-1"
             mask_file = mask_dict.get(expected_mask_base)
 
@@ -90,40 +84,55 @@ def load_data(img_dir: str, mask_dir: str, img_height: int = 256, img_width: int
 
             try:
                 # Load and preprocess the HSI image (31 channels)
-                img = tiff.imread(img_path)  # Shape: (Bands, Height, Width)
-                img = img.transpose(1, 0, 2)  # Convert to (Height, Width, Bands)
-                img = tf.image.resize(img, [img_height, img_width]).numpy()
-                img = img / np.max(img)  # Normalize based on max value
-                X.append(img)
+                hsi = tiff.imread(img_path)  # Attempt to read using tifffile
 
-                # Load and preprocess the mask
-                mask = Image.open(mask_path).convert("L")  # Grayscale
-                mask = mask.resize((img_width, img_height))
-                mask_array = np.array(mask) / 255.0  # Normalize to [0, 1]
-                mask_array = np.expand_dims(mask_array, axis=-1)  # Add channel dimension
-                Y.append(mask_array)
+                # Verify the shape of the loaded HSI image
+                if hsi.ndim == 3 and hsi.shape[0] == 31:
+                    hsi = np.transpose(hsi, (1, 2, 0))  # Convert to (Height, Width, Channels)
+                elif hsi.ndim == 3 and hsi.shape[2] == 31:
+                    pass  # Already in (Height, Width, Channels)
+                else:
+                    logging.warning(f"Image '{img_file}' has unexpected shape {hsi.shape}. Skipping.")
+                    skipped_no_mask += 1
+                    continue
 
-                matched += 1
+                # Resize the HSI image
+                hsi = tf.image.resize(hsi, [img_height, img_width]).numpy()
+
+                # Normalize the HSI image
+                img_max = np.max(hsi)
+                if img_max > 0:
+                    hsi = hsi / img_max
+                else:
+                    logging.warning(f"Image '{img_file}' has a max value of 0. Skipping normalization.")
+
+                X.append(hsi)
+
+                # Load and preprocess the mask image
+                mask = Image.open(mask_path).convert('L')  # Convert to grayscale
+                mask = np.array(mask)
+
+                # Ensure mask has shape (Height, Width)
+                if mask.ndim == 3:
+                    mask = mask[:, :, 0]
+
+                # Resize the mask
+                mask = tf.image.resize(mask[..., np.newaxis], [img_height, img_width], method='nearest').numpy()
+
+                # Binarize the mask
+                mask = (mask > 0).astype(np.float32)
+
+                Y.append(mask)
 
             except Exception as e:
-                logging.error(f"Error loading image or mask pair '{img_file}' and '{mask_file}': {e}")
-                skipped_load_error += 1
+                logging.error(f"Error processing image '{img_file}' and mask '{mask_file}': {e}")
+                skipped_no_mask += 1
                 continue
 
-        logging.info(f"Matched and loaded {matched} image-mask pairs.")
-        if skipped_no_mask > 0:
-            logging.info(f"Skipped {skipped_no_mask} images due to missing masks.")
-        if skipped_load_error > 0:
-            logging.info(f"Skipped {skipped_load_error} image-mask pairs due to loading errors.")
+    logging.info(f"Found {len(X)} HSI images and {len(Y)} mask images.")
+    logging.info(f"Skipped {skipped_no_mask} images due to missing masks or processing issues.")
 
-        X = np.array(X)
-        Y = np.array(Y)
-
-        return X, Y
-
-    except Exception as e:
-        logging.error(f"An error occurred while loading data: {e}")
-        return np.array([]), np.array([])
+    return np.array(X), np.array(Y)
     
 def load_model(checkpoint_path: str) -> tf.keras.Model:
     """
@@ -641,3 +650,4 @@ def visualize_synthetic_overlay(image_path: str, output_path: str, mask_alpha: f
     except Exception as e:
         logging.error(f"Failed to create synthetic mask overlay: {e}")
         raise e
+    
