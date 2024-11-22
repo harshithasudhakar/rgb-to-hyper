@@ -15,22 +15,13 @@ from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose
 IMG_HEIGHT, IMG_WIDTH = 256, 256
 N_CLASSES = 1  # Binary segmentation
 BATCH_SIZE = 16
-EPOCHS = 5
+EPOCHS = 2
 IMG_PATH = r"C:\Harshi\ECS-II\Dataset\temp-gen-hsi"  # Path to your HSI images
 MASK_PATH = r"C:\Harshi\ECS-II\Dataset\temp-mask"  # Path to your masks
 MODEL_PATH = r"C:\Harshi\ecs-venv\rgb-to-hyper\rgb-to-hyper-main\rgb-to-hyper"
 
 class HSIGenerator(Sequence):
-    def __init__(
-        self,
-        img_dir,
-        mask_dir,
-        batch_size=16,
-        img_height=256,
-        img_width=256,
-        desired_channels=31,
-        shuffle=True
-    ):
+    def __init__(self, img_dir, mask_dir, batch_size, img_height, img_width, desired_channels, shuffle=True):
         self.img_dir = img_dir
         self.mask_dir = mask_dir
         self.batch_size = batch_size
@@ -38,115 +29,85 @@ class HSIGenerator(Sequence):
         self.img_width = img_width
         self.desired_channels = desired_channels
         self.shuffle = shuffle
-        self.img_files = [
-            f for f in os.listdir(img_dir) if f.lower().endswith(('.tiff', '.tif'))
-        ]
-        self.mask_files = [
-            f for f in os.listdir(mask_dir) if f.lower().endswith(('.tiff', '.tif', '.png', '.jpg', '.jpeg'))
-        ]
-        self.mask_dict = {os.path.splitext(f)[0].lower(): f for f in self.mask_files}
-        self.indexes = np.arange(len(self.img_files))
+        self.image_files = sorted([
+            f for f in os.listdir(self.img_dir)
+            if f.lower().endswith(('.tiff', '.tif', '.png', '.jpg', '.jpeg'))
+        ])
+        self.indexes = np.arange(len(self.image_files))
         self.on_epoch_end()
 
-        logging.info(f"Initialized HSIGenerator with {len(self.img_files)} images.")
-
     def __len__(self):
-        length = int(np.floor(len(self.img_files) / self.batch_size))
-        logging.debug(f"Number of batches per epoch: {length}")
-        return length
+        return int(np.ceil(len(self.image_files) / self.batch_size))
 
     def __getitem__(self, index):
-        # Generate indexes for the batch
-        start_idx = index * self.batch_size
-        end_idx = (index + 1) * self.batch_size
-        batch_indexes = self.indexes[start_idx:end_idx]
+        batch_indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
+        batch_files = [self.image_files[k] for k in batch_indexes]
 
-        # Retrieve the filenames for the batch
-        batch_imgs = [self.img_files[k] for k in batch_indexes]
+        X = []
+        Y = []
 
-        logging.info(f"Generating batch {index + 1}: {batch_imgs}")
+        for file_name in batch_files:
+            img_path = os.path.join(self.img_dir, file_name)
+            
+            # Construct mask filename with '.png' extension
+            base_name = os.path.splitext(file_name)[0].replace('_hsi', '-1')  # e.g., '191_hsi.tiff' -> '191-1'
+            mask_file = base_name + '.png'                                   # '191-1.png'
+            mask_path = os.path.join(self.mask_dir, mask_file)
 
-        # Generate data
-        X, Y = self.__data_generation(batch_imgs)
+            try:
+                # Load HSI image
+                hsi = tiff.imread(img_path)  # Original shape: (31, 256, 256)
+                if hsi.ndim != 3 or hsi.shape[0] != self.desired_channels:
+                    logging.warning(f"Image '{file_name}' has unexpected shape {hsi.shape}. Skipping.")
+                    continue
+                hsi = np.transpose(hsi, (1, 2, 0))  # Transpose to (256, 256, 31)
+                assert hsi.shape == (self.img_height, self.img_width, self.desired_channels), \
+                    f"HSI image has incorrect shape: {hsi.shape}"
+                X.append(hsi)
 
-        logging.debug(f"Batch {index + 1} - X shape: {X.shape}, Y shape: {Y.shape}")
+                # Load mask
+                mask = Image.open(mask_path).convert('L')  # Convert to grayscale
+                # Resize mask to (256, 256) using nearest-neighbor to preserve binary values
+                if mask.size != (self.img_width, self.img_height):
+                    mask = mask.resize((self.img_width, self.img_height), resample=Image.NEAREST)
+                    logging.info(f"Resized mask '{mask_file}' to {(self.img_width, self.img_height)}")
+                mask = np.array(mask)
+                mask = np.expand_dims(mask, axis=-1)            # Shape: (256, 256, 1)
+                mask = (mask > 0).astype(np.float32)            # Binarize
+                assert mask.shape == (self.img_height, self.img_width, 1), \
+                    f"Mask has incorrect shape: {mask.shape}"
+                Y.append(mask)
+
+                logging.info(f"Image '{file_name}' loaded with shape {hsi.shape}")
+                
+            except FileNotFoundError:
+                logging.error(f"Mask file not found for image '{file_name}': '{mask_path}'. Skipping.")
+            except AssertionError as ae:
+                logging.error(f"Assertion error for '{file_name}': {ae}. Skipping.")
+            except Exception as e:
+                logging.error(f"Error loading '{file_name}' or its mask: {e}. Skipping.")
+
+        X = np.array(X)
+        Y = np.array(Y)
+
+        if Y.size == 0:
+            logging.warning(f"No valid masks found in batch {index}. Skipping this batch.")
+            # Fetch the next batch to avoid empty Y
+            return self.__getitem__((index + 1) % self.__len__())
+
+        # Ensure that X and Y have the same number of samples
+        assert X.shape[0] == Y.shape[0], "Number of images and masks do not match in batch."
+
+        logging.info(f"Batch X shape: {X.shape}, Batch Y shape: {Y.shape}")
 
         return X, Y
 
     def on_epoch_end(self):
         if self.shuffle:
             np.random.shuffle(self.indexes)
-            logging.info("Shuffled the data indices for the new epoch.")
-
-    def __data_generation(self, batch_imgs):
-        X = []
-        Y = []
-        for img_file in batch_imgs:
-            img_base = os.path.splitext(img_file)[0].lower()
-            if '_hsi' in img_base:
-                num_part = img_base.split('_hsi')[0]
-            else:
-                logging.warning(f"Image filename '{img_file}' does not contain '_hsi'. Skipping.")
-                continue  # Skip files without '_hsi'
-
-            expected_mask_base = f"{num_part}-1"
-            mask_file = self.mask_dict.get(expected_mask_base)
-            if not mask_file:
-                logging.warning(f"No mask found for image '{img_file}'. Skipping.")
-                continue  # Skip if no corresponding mask
-
-            img_path = os.path.join(self.img_dir, img_file)
-            mask_path = os.path.join(self.mask_dir, mask_file)
-
-            try:
-                # Load and preprocess HSI image
-                img = tiff.imread(img_path)  # Shape: (Bands, Height, Width)
-                bands = img.shape[2]
-                logging.debug(f"Image '{img_file}' loaded with shape {img.shape}")
-
-                if bands < self.desired_channels:
-                    logging.warning(
-                        f"Image '{img_file}' has {bands} channels, less than desired {self.desired_channels}. Skipping."
-                    )
-                    continue  # Skip if insufficient channels
-                elif bands > self.desired_channels:
-                    img = img[:self.desired_channels, :, :]  # Retain the first 'desired_channels' bands
-                    logging.debug(f"Image '{img_file}' channels reduced to {self.desired_channels}.")
-
-                # img = img.transpose(1, 2, 0)  # Convert to (Height, Width, Channels)
-                # logging.debug(f"Image '{img_file}' shape after transpose: {img.shape}")
-
-                img = img.astype('float32')
-                img_max = np.max(img)
-                if img_max == 0:
-                    logging.warning(f"Image '{img_file}' has maximum value 0 after loading. Skipping.")
-                    continue
-                img = img / img_max  # Normalize based on max value
-                img = np.clip(img, 0, 1)  # Ensure values are within [0, 1]
-                X.append(img)
-
-                # Load and preprocess mask
-                mask = Image.open(mask_path).convert("L")  # Grayscale
-                mask = mask.resize((self.img_width, self.img_height))
-                mask_array = np.array(mask).astype('float32') / 255.0  # Normalize to [0, 1]
-                mask_array = np.expand_dims(mask_array, axis=-1)  # Add channel dimension
-                Y.append(mask_array)
-
-                logging.debug(f"Processed image and mask for '{img_file}'.")
-
-            except Exception as e:
-                logging.error(f"Error loading image or mask pair '{img_file}' and '{mask_file}': {e}")
-                continue
-
-        X = np.array(X)
-        Y = np.array(Y)
-
-        logging.debug(f"Generated data - X shape: {X.shape}, Y shape: {Y.shape}")
-
-        return X, Y
 
 def build_unet(input_shape=(256, 256, 31), num_classes=1):
-    inputs = Input(input_shape)
+    inputs = layers.Input(shape=input_shape)
     
     # Encoder
     c1 = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
