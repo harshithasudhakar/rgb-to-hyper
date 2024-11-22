@@ -113,8 +113,8 @@ class HSIGenerator(Sequence):
                     img = img[:self.desired_channels, :, :]  # Retain the first 'desired_channels' bands
                     logging.debug(f"Image '{img_file}' channels reduced to {self.desired_channels}.")
 
-
-                logging.debug(f"Image '{img_file}' shape after transpose: {img.shape}")
+                # img = img.transpose(1, 2, 0)  # Convert to (Height, Width, Channels)
+                # logging.debug(f"Image '{img_file}' shape after transpose: {img.shape}")
 
                 img = img.astype('float32')
                 img_max = np.max(img)
@@ -135,7 +135,7 @@ class HSIGenerator(Sequence):
                 logging.debug(f"Processed image and mask for '{img_file}'.")
 
             except Exception as e:
-                logging.error(f"Error loading image/mask pair '{img_file}' and '{mask_file}': {e}")
+                logging.error(f"Error loading image or mask pair '{img_file}' and '{mask_file}': {e}")
                 continue
 
         X = np.array(X)
