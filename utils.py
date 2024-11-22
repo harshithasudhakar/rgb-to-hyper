@@ -83,13 +83,14 @@ def visualize_false_color_composite(stacked_hsi: np.ndarray, bands: List[int] = 
     except Exception as e:
         logging.error(f"Error in False-Color Composite visualization: {e}")
 
+
 def visualize_pca_composite(stacked_hsi: np.ndarray, n_components: int = 3, figsize=(10, 10), save_path: str = None):
     """
-    Reduces HSI data to 3 principal components and visualizes as an RGB image.
+    Reduces HSI data to specified principal components and visualizes as a single RGB composite image.
 
     Args:
         stacked_hsi (np.ndarray): Stacked HSI data with shape (height, width, bands).
-        n_components (int): Number of principal components to retain.
+        n_components (int): Number of principal components to retain (default is 3 for RGB).
         figsize (tuple): Size of the figure.
         save_path (str, optional): Path to save the PCA composite image.
 
@@ -108,19 +109,26 @@ def visualize_pca_composite(stacked_hsi: np.ndarray, n_components: int = 3, figs
         # Reshape back to image format
         pca_image = principal_components.reshape(height, width, n_components)
         
-        # Normalize for display
-        pca_normalized = pca_image / np.max(pca_image, axis=(0, 1), keepdims=True)
+        # Normalize each component to [0, 1]
+        pca_normalized = pca_image - np.min(pca_image, axis=(0, 1), keepdims=True)
+        pca_normalized /= np.max(pca_normalized, axis=(0, 1), keepdims=True)
         
-        plt.figure(figsize=figsize)
-        plt.imshow(pca_normalized)
-        plt.title(f'PCA Composite (Top {n_components} Components)')
-        plt.axis('off')
-        
-        if save_path:
-            plt.savefig(save_path)
-            logging.info(f"PCA Composite saved to: {save_path}")
-        
-        plt.show()
+        if n_components == 3:
+            # Assign each principal component to RGB channels
+            rgb_composite = pca_normalized[:, :, :3]
+            
+            plt.figure(figsize=figsize)
+            plt.imshow(rgb_composite)
+            plt.title(f'PCA Composite (Top {n_components} Components)')
+            plt.axis('off')
+            
+            if save_path:
+                plt.savefig(save_path)
+                logging.info(f"PCA Composite saved to: {save_path}")
+            
+            plt.show()
+        else:
+            logging.error("n_components must be 3 for RGB visualization.")
     
     except Exception as e:
         logging.error(f"Error in PCA Composite visualization: {e}")
@@ -874,23 +882,43 @@ def extract_bands(input_dir: str, output_dir: str):
 
 def save_hsi_image(hsi_image: np.ndarray, filename: str, save_dir: str):
     """
-    Saves a single HSI image as a multi-band TIFF file.
+    Saves an HSI image as a multi-band TIFF file manually.
 
     Args:
-        hsi_image (np.ndarray): HSI image array with shape (height, width, channels).
+        hsi_image (np.ndarray): HSI image array of shape (height, width, spectral_channels).
         filename (str): Base filename without extension.
         save_dir (str): Directory to save the TIFF file.
     """
     try:
-        # Define the output file path
+        # Ensure the save directory exists
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Check if the HSI image has the expected shape
+        if hsi_image.ndim != 3:
+            raise ValueError("HSI image must have three dimensions (height, width, channels).")
+
+        # Extract dimensions
+        height, width, channels = hsi_image.shape
+
+        # Convert the HSI image to 8-bit or 16-bit if necessary (adjust dtype if needed)
+        if hsi_image.dtype != np.uint8:
+            hsi_image = (255 * (hsi_image - hsi_image.min()) / (hsi_image.max() - hsi_image.min())).astype(np.uint8)
+
+        # Save each spectral band as a separate layer in the TIFF
+        layers = [Image.fromarray(hsi_image[:, :, i]) for i in range(channels)]
         output_path = os.path.join(save_dir, f"{filename}_hsi.tiff")
-        
-        # Save using tifffile
-        tiff.imwrite(output_path, hsi_image, photometric='minisblack')
-        logging.info(f"Saved HSI image: {output_path}")
+
+        # Save as a multi-layer TIFF
+        layers[0].save(
+            output_path,
+            save_all=True,
+            append_images=layers[1:],
+            compression="tiff_deflate",
+        )
+        print(f"HSI image saved successfully at: {output_path}")
+
     except Exception as e:
-        logging.error(f"Failed to save HSI image for {filename}: {str(e)}")
-        
+        print(f"Error saving HSI image: {e}")
 
 def load_data(image_dir, mask_dir, img_height=IMG_HEIGHT, img_width=IMG_WIDTH):
     images = []
