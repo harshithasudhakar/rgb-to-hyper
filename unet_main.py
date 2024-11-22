@@ -50,10 +50,10 @@ logging.basicConfig(
 
 
 # Define paths using raw strings
-extract_dir = r"C:\Harshi\ECS-II\Dataset\extracted"
-rgb_dir = r"C:\Harshi\ECS-II\Dataset\temp-rgb-micro"
-mask_dir = r"C:\Harshi\ECS-II\Dataset\mask_micro"
-zip_file_path = r"C:\Harshi\ECS-II\Dataset\dataverse_files full"
+# extract_dir = r"C:\Harshi\ECS-II\Dataset\extracted"
+rgb_dir = "data\\unet\\images"
+mask_dir = "data\\unet\\masks"
+# zip_file_path = r"C:\Harshi\ECS-II\Dataset\dataverse_files full"
 
 
 """
@@ -214,15 +214,15 @@ def test_generator(generator):
     plt.title('Sample HSI Band 31')
     
     plt.show()
-
+"""
 if __name__ == "__main__":
     IMG_HEIGHT, IMG_WIDTH = 256, 256
     N_CLASSES = 1  # Binary segmentation
     BATCH_SIZE = 16
-    EPOCHS = 5
-    IMG_PATH = r"C:\Harshi\ECS-II\Dataset\temp-gen-hsi"  # Path to your HSI images
-    MASK_PATH = r"C:\Harshi\ECS-II\Dataset\temp-mask"  # Path to your masks
-    MODEL_PATH = r"C:\Harshi\ecs-venv\rgb-to-hyper\rgb-to-hyper-main\rgb-to-hyper"
+    EPOCHS = 1
+    IMG_PATH = "data\\unet\\gen-hsi"
+    MASK_PATH = "data\\unet\\masks"
+    MODEL_PATH = "."
 
     # Build and summarize the model
     model = build_unet(input_shape=(256, 256, 31), num_classes=1)  # Adjust input channels if necessary
@@ -305,7 +305,7 @@ if __name__ == "__main__":
 
     # Callbacks
     checkpoint = ModelCheckpoint(
-        r'C:\Harshi\ECS-II\Dataset\checkpoints\best_model.keras',
+        "checkpoints\\best_model.keras",
         save_best_only=True,
         monitor='val_loss',
         mode='min'
@@ -320,20 +320,19 @@ if __name__ == "__main__":
     model.fit(
         train_generator,
         validation_data=val_generator,
-        epochs=5,
+        epochs=EPOCHS,
         callbacks=[checkpoint, early_stop]
     )
 
     logging.info("Training complete!")
     print("Training complete!")
-
-"""from unet_utils import load_model_and_predict
-
+"""
+from unet_utils import load_and_predict
 if __name__ == "__main__":
-    IMAGE_PATH = r"C:\Harshi\ECS-II\Dataset\val_set_micro_hsi\035_hsi.tiff"
-    CHECKPOINT_PATH = r"C:\Harshi\ecs-venv\rgb-to-hyper\rgb-to-hyper-main\rgb-to-hyper\best_model.keras"
-    OUTPUT_DIR = r"C:\Harshi\ECS-II\Dataset\gen_overlay"
-    OUTPUT_FILENAME = "003_overlay.png"
+    IMAGE_PATH = "data\\unet\\val\\077_hsi.tiff"
+    CHECKPOINT_PATH = "D:\\repos\\rgb-to-hyper\\checkpoints\\best_model.keras"
+    OUTPUT_DIR = "data\\unet\\out"
+    OUTPUT_FILENAME = "overlay.png"
 
     # Ensure the output directory exists
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -342,19 +341,17 @@ if __name__ == "__main__":
     
     try:
         # Predict the mask and visualize the overlay
-        mask = load_model_and_predict(IMAGE_PATH, CHECKPOINT_PATH, OUTPUT_PATH)
+        mask = load_and_predict(IMAGE_PATH, CHECKPOINT_PATH, OUTPUT_PATH)
         if mask is not None:
             logging.info("Mask obtained and overlay visualization created successfully.")
         else:
             logging.error("Mask prediction failed. Overlay was not created.")
     except Exception as e:
-        logging.error(f"Failed to load model and predict: {e}")"""
+        logging.error(f"Failed to load model and predict: {e}")
 
-"""
     try:
         # Create and visualize synthetic mask overlay
         visualize_synthetic_overlay(IMAGE_PATH, OUTPUT_PATH)
         logging.info("Synthetic mask overlay created successfully.")
     except Exception as e:
         logging.error(f"Failed to create synthetic mask overlay: {e}")
-"""

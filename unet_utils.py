@@ -483,7 +483,7 @@ def visualize_overlay(hsi_path: str, mask: np.ndarray, output_path: str, alpha: 
         raise e
     
     
-def load_model_and_predict(image_path: str, checkpoint_path: str, output_dir: str, overlay_filename: str = "overlay.png") -> np.ndarray:
+def load_and_predict(image_path: str, checkpoint_path: str, output_dir: str, overlay_filename: str = "overlay.png") -> np.ndarray:
     """
     Load the model, predict the mask for a single image, visualize, and save the overlay.
 
