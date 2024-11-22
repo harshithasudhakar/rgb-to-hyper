@@ -89,17 +89,17 @@ logging.info("Contents of 'mask_micro':")
 logging.info(os.listdir(mask_dir))
 """
 
-# Call load_model_and_predict with the sorted images
+"""# Call load_model_and_predict with the sorted images
 try:
     load_model_and_predict(
         rgb_path=rgb_dir,
         checkpoint_path=CHECKPOINT_DIR
     )
 except Exception as e:
-    logging.error(f"An error occurred during prediction: {str(e)}")
-
+    logging.error(f"An error occurred during prediction: {str(e)}")"""
+"""
 # Load the saved multi-band TIFF
-loaded_hsi = tiff.imread(r'c:\Harshi\ECS-II\Dataset\gen_hsi\190_hsi.tiff')
+loaded_hsi = tiff.imread(r'c:\Harshi\ECS-II\Dataset\gen_hsi\056_hsi.tiff')
 
 print(f"Loaded HSI Shape: {loaded_hsi.shape}")  # Should be (height, width, 31)
 
@@ -143,7 +143,8 @@ try:
         except Exception as e:
             logging.error(f"An error occurred during grid image creation: {e}")
         
-        """# False-Color Composite Visualization
+        
+        # False-Color Composite Visualization
         try:
             false_color_save_path = r"C:\Harshi\ECS-II\Dataset\gen_hsi\False_Color_Composite.png"
             visualize_false_color_composite(
@@ -154,7 +155,7 @@ try:
             )
         except Exception as e:
             logging.error(f"An error occurred during False-Color Composite visualization: {e}")
-        """
+        
         # PCA Composite Visualization
         try:
             pca_save_path = r"C:\Harshi\ECS-II\Dataset\gen_hsi\PCA_Composite.png"
@@ -167,7 +168,7 @@ try:
         except Exception as e:
             logging.error(f"An error occurred during PCA Composite visualization: {e}")
         
-        """# Interactive 3D PCA Visualization (Optional)
+        # Interactive 3D PCA Visualization (Optional)
         try:
             visualize_pca_3d(
                 stacked_hsi=stacked_hsi,
@@ -180,16 +181,16 @@ try:
         try:
             visualize_stacked_hsi(stacked_hsi, save_path=r"C:\Harshi\ECS-II\Dataset\gen_hsi\stacked_hsi.tiff")
         except Exception as e:
-            logging.error(f"An error occurred during stacked HSI visualization: {str(e)}")"""
+            logging.error(f"An error occurred during stacked HSI visualization: {str(e)}")
     
     else:
         logging.error("HSI data is empty. Stacking and visualization skipped.")
 
 except Exception as e:
     logging.error(f"An error occurred during HSI bands visualization and stacking: {str(e)}")
+"""
 
-
-"""def test_generator(generator):
+def test_generator(generator):
     X_test, Y_test = generator.__getitem__(0)
     print(f"Test Batch - X shape: {X_test.shape}, Y shape: {Y_test.shape}")
     
@@ -231,18 +232,38 @@ if __name__ == "__main__":
         model.summary(print_fn=lambda x: f.write(x + '\n'))
     logging.info("Model summary saved to 'model_summary.txt'")
 
-    # Load data
+    # Load data with required arguments
     try:
-        X, Y = load_data(IMG_PATH, MASK_PATH)
+        X, Y = load_data(
+            img_dir=IMG_PATH,
+            mask_dir=MASK_PATH,
+            img_height=256,
+            img_width=256
+        )
     except ValueError as ve:
         print(f"Data loading error: {ve}")
+        logging.error(f"Data loading error: {ve}")
+        exit(1)
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during data loading: {e}")
+        print(f"Unexpected error: {e}")
         exit(1)
 
     print(f"Loaded {X.shape[0]} samples.")
+    logging.info(f"Loaded {X.shape[0]} samples.")
     print(f"Image shape: {X.shape[1:]}")  # Expected: (256, 256, 31)
-    print(f"Mask shape: {Y.shape[1:]}")    # Expected: (256, 256, 1) 
+    logging.info(f"Image shape: {X.shape[1:]}")
+    print(f"Mask shape: {Y.shape[1:]}")    # Expected: (256, 256, 1)
+    logging.info(f"Mask shape: {Y.shape[1:]}")
 
-    if X.shape[0] == 0:
+    # Verify mask shapes
+    if Y.ndim != 4 or Y.shape[-1] != 1:
+        logging.error(f"Unexpected mask shape: {Y.shape}. Expected (num_samples, 256, 256, 1)")
+        print("Unexpected mask shapes. Please check your data preprocessing.")
+        exit(1)
+
+    if X.shape[0] == 0 or Y.shape[0] == 0:
+        logging.error("No samples loaded. Please check your data directories and file formats.")
         print("No samples loaded. Please check your data directories and file formats.")
         exit(1)
 
@@ -251,8 +272,10 @@ if __name__ == "__main__":
         X, Y, test_size=0.2, random_state=42
     )
     print(f"Training samples: {X_train.shape[0]}, Validation samples: {X_val.shape[0]}")
+    logging.info(f"Training samples: {X_train.shape[0]}, Validation samples: {X_val.shape[0]}")
 
     # Initialize data generator
+    BATCH_SIZE = 16  # Define your batch size
     train_generator = HSIGenerator(
         img_dir=IMG_PATH,
         mask_dir=MASK_PATH,
@@ -263,10 +286,6 @@ if __name__ == "__main__":
         shuffle=True
     )
 
-    # Test the generator
-    test_generator(train_generator)
-
-    # Validation generator
     val_generator = HSIGenerator(
         img_dir=IMG_PATH,
         mask_dir=MASK_PATH,
@@ -285,18 +304,28 @@ if __name__ == "__main__":
     )
 
     # Callbacks
-    checkpoint = ModelCheckpoint('best_model.keras', save_best_only=True, monitor='val_loss', mode='min')
-    early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    checkpoint = ModelCheckpoint(
+        r'C:\Harshi\ECS-II\Dataset\checkpoints\best_model.keras',
+        save_best_only=True,
+        monitor='val_loss',
+        mode='min'
+    )
+    early_stop = EarlyStopping(
+        monitor='val_loss',
+        patience=10,
+        restore_best_weights=True
+    )
 
     # Train the model using generators
     model.fit(
         train_generator,
         validation_data=val_generator,
-        epochs=EPOCHS,
+        epochs=5,
         callbacks=[checkpoint, early_stop]
     )
 
-    print("Training complete!")"""
+    logging.info("Training complete!")
+    print("Training complete!")
 
 """from unet_utils import load_model_and_predict
 
